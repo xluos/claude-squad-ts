@@ -1,3 +1,8 @@
+# OpenTUI/Solid needs a Babel-based JSX transform at runtime.
+# The preload script installs a Bun plugin that applies babel-preset-solid
+# to .tsx files before they hit the runtime.
+preload = ["@opentui/solid/preload"]
+
 [test]
 # Scope test discovery so node_modules tests don't get picked up.
 root = "test"

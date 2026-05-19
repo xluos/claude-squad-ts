@@ -1,5 +1,4 @@
-import { Box, Text } from 'ink';
-import type React from 'react';
+import { For, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { colors, icons } from '../../shared/styles.js';
 import { Status } from '../../shared/types.js';
@@ -12,55 +11,47 @@ export interface InstanceListProps {
   autoYes?: boolean;
 }
 
-export function InstanceList({
-  instances,
-  selectedIndex,
-  width,
-  height,
-  autoYes,
-}: InstanceListProps): React.ReactElement {
+export function InstanceList(props: InstanceListProps) {
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <Box width={width - 2} justifyContent="space-between" paddingX={1}>
-        <Text backgroundColor={colors.primary} color="white" bold>
+    <box flexDirection="column" width={props.width} height={props.height}>
+      <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
+        <text bg={colors.primary} fg="white" attributes={1}>
           {' Instances '}
-        </Text>
-        {autoYes ? (
-          <Text backgroundColor={colors.warning} color="black" bold>
+        </text>
+        <Show when={props.autoYes}>
+          <text bg={colors.warning} fg="black" attributes={1}>
             {' auto-yes '}
-          </Text>
-        ) : (
-          <Text> </Text>
-        )}
-      </Box>
-      <Box
+          </text>
+        </Show>
+      </box>
+      <box
         flexGrow={1}
         flexDirection="column"
-        width={width}
-        borderStyle="round"
+        width={props.width}
+        borderStyle="rounded"
         borderColor={colors.borderActive}
-        paddingX={1}
-        paddingY={0}
+        paddingLeft={1}
+        paddingRight={1}
+        gap={1}
       >
-        {instances.length === 0 ? (
-          <Box paddingTop={1}>
-            <Text color="gray">
-              No instances. Press <Text color="cyan">n</Text> to create.
-            </Text>
-          </Box>
-        ) : (
-          instances.map((inst, idx) => (
-            <Row
-              key={inst.title}
-              instance={inst}
-              index={idx + 1}
-              selected={idx === selectedIndex}
-              width={width - 4}
-            />
-          ))
-        )}
-      </Box>
-    </Box>
+        <Show
+          when={props.instances.length > 0}
+          fallback={
+            <box paddingTop={1}>
+              <text fg={colors.muted}>
+                No instances. Press <text fg="cyan">n</text> to create.
+              </text>
+            </box>
+          }
+        >
+          <For each={props.instances}>
+            {(inst, idx) => (
+              <Row instance={inst} index={idx() + 1} selected={idx() === props.selectedIndex} />
+            )}
+          </For>
+        </Show>
+      </box>
+    </box>
   );
 }
 
@@ -68,54 +59,46 @@ interface RowProps {
   instance: Instance;
   index: number;
   selected: boolean;
-  width: number;
 }
 
-function Row({ instance, index, selected, width }: RowProps): React.ReactElement {
-  const displayName = instance.displayName || instance.title;
-  const iconColor = iconColorFor(instance.status);
-  const diffStr =
-    instance.diffStats.added > 0 || instance.diffStats.removed > 0
-      ? `+${instance.diffStats.added},-${instance.diffStats.removed}`
-      : '';
+function Row(props: RowProps) {
+  const displayName = () => props.instance.displayName || props.instance.title;
+  const branch = () => props.instance.branch || '(pending)';
+  const stats = () => props.instance.diffStats;
 
-  // Two-line entry. Highlight whole block with background when selected.
-  const bg = selected ? colors.selectedBg : undefined;
-  const titleColor = selected ? 'white' : 'white';
-  const branchColor = selected ? colors.muted : colors.muted;
+  const titleAttr = () => (props.selected ? 1 : 0); // bold when selected
+  const bg = () => (props.selected ? colors.selectedBg : undefined);
 
   return (
-    <Box flexDirection="column" width={width} marginTop={1}>
-      <Box width={width} justifyContent="space-between" backgroundColor={bg}>
-        <Text backgroundColor={bg} color={titleColor}>
-          <Text color={colors.muted}>{`${index}. `}</Text>
-          <Text bold backgroundColor={bg} color={titleColor}>
-            {displayName}
-          </Text>
-        </Text>
-        <Text color={iconColor} backgroundColor={bg}>
-          {iconFor(instance.status)}
-        </Text>
-      </Box>
-      <Box width={width} justifyContent="space-between" backgroundColor={bg}>
-        <Text color={branchColor} backgroundColor={bg}>
-          {`   λ-${truncate(instance.branch || '(pending)', Math.max(8, width - 18))}`}
-        </Text>
-        {diffStr && (
-          <Text backgroundColor={bg}>
-            <Text color={colors.diffAdded} backgroundColor={bg}>
-              {`+${instance.diffStats.added}`}
-            </Text>
-            <Text color={colors.muted} backgroundColor={bg}>
-              {','}
-            </Text>
-            <Text color={colors.diffRemoved} backgroundColor={bg}>
-              {`-${instance.diffStats.removed}`}
-            </Text>
-          </Text>
-        )}
-      </Box>
-    </Box>
+    <box flexDirection="column" backgroundColor={bg()}>
+      <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
+        <text bg={bg()}>
+          <text fg={colors.muted} bg={bg()}>
+            {`${props.index}. `}
+          </text>
+          <text fg={props.selected ? colors.accent : 'white'} attributes={titleAttr()} bg={bg()}>
+            {displayName()}
+          </text>
+        </text>
+        <text fg={iconColorFor(props.instance.status)} bg={bg()}>
+          {iconFor(props.instance.status)}
+        </text>
+      </box>
+      <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
+        <text fg={colors.muted} bg={bg()}>
+          {`   λ-${branch()}`}
+        </text>
+        <Show when={stats().added > 0 || stats().removed > 0}>
+          <text bg={bg()}>
+            <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
+            <text fg={colors.muted} bg={bg()}>
+              ,
+            </text>
+            <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
+          </text>
+        </Show>
+      </box>
+    </box>
   );
 }
 
@@ -143,10 +126,4 @@ function iconColorFor(status: Status): string {
     case Status.Paused:
       return colors.statusPaused;
   }
-}
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  if (max <= 1) return '…';
-  return `${s.slice(0, max - 1)}…`;
 }

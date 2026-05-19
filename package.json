@@ -1,7 +1,7 @@
 {
   "name": "claude-squad-ts",
-  "version": "0.1.0",
-  "description": "TypeScript rewrite of claude-squad — manage multiple Claude/Aider sessions over git worktrees + tmux. Solves CJK rendering and IME cursor-tracking issues of the Go version.",
+  "version": "0.2.0",
+  "description": "TypeScript rewrite of claude-squad — manage multiple Claude/Aider sessions over git worktrees + tmux. Built on SolidJS + OpenTUI for native IME / CJK support.",
   "type": "module",
   "bin": {
     "cs": "./dist/cli/index.js",
@@ -12,7 +12,6 @@
     "dev": "bun run src/cli/index.ts",
     "dev:tui": "bun run src/cli/index.ts",
     "build": "bun build src/cli/index.ts --target=bun --outdir=dist --minify --sourcemap",
-    "build:js": "bun build src/cli/index.ts --target=node --outdir=dist",
     "start": "bun run dist/cli/index.js",
     "check": "tsc --noEmit && biome check src",
     "typecheck": "tsc --noEmit",
@@ -28,21 +27,16 @@
   },
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.12",
-    "ansi-escapes": "^7.0.0",
-    "chalk": "^5.6.2",
-    "cli-truncate": "^4.0.0",
+    "@opentui/core": "0.2.14",
+    "@opentui/keymap": "0.2.14",
+    "@opentui/solid": "0.2.14",
     "commander": "^14.0.3",
-    "ink": "^7.0.3",
-    "react": "^19.2.6",
     "simple-git": "^3.36.0",
-    "string-width": "^8.2.1",
-    "strip-ansi": "^7.1.2",
-    "wrap-ansi": "^10.0.0"
+    "solid-js": "1.9.12"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",
     "@types/bun": "latest",
-    "@types/react": "^19.2.0",
     "typescript": "^5.9.0"
   },
   "trustedDependencies": [
@@ -50,7 +44,12 @@
     "@lydell/node-pty-darwin-arm64",
     "@lydell/node-pty-darwin-x64",
     "@lydell/node-pty-linux-x64",
-    "@lydell/node-pty-linux-arm64"
+    "@lydell/node-pty-linux-arm64",
+    "@opentui/core",
+    "@opentui/core-darwin-arm64",
+    "@opentui/core-darwin-x64",
+    "@opentui/core-linux-arm64",
+    "@opentui/core-linux-x64"
   ],
   "files": [
     "dist",

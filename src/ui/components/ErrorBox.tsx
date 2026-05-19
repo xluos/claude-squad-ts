@@ -1,35 +1,32 @@
-import { Box, Text } from 'ink';
-import type React from 'react';
-import { useEffect, useState } from 'react';
+import { createEffect, onCleanup, Show } from 'solid-js';
 import { ERROR_DISMISS_MS } from '../../shared/constants.js';
+import { colors } from '../../shared/styles.js';
 
 export interface ErrorBoxProps {
   message: string | null;
-  onDismiss?: () => void;
   width?: number;
+  onDismiss?: () => void;
 }
 
-export function ErrorBox({ message, onDismiss, width }: ErrorBoxProps): React.ReactElement | null {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (!message) {
-      setVisible(false);
-      return;
-    }
-    setVisible(true);
-    const id = setTimeout(() => {
-      setVisible(false);
-      onDismiss?.();
-    }, ERROR_DISMISS_MS);
-    return () => clearTimeout(id);
-  }, [message, onDismiss]);
-
-  if (!visible || !message) return null;
+export function ErrorBox(props: ErrorBoxProps) {
+  createEffect(() => {
+    if (!props.message) return;
+    const id = setTimeout(() => props.onDismiss?.(), ERROR_DISMISS_MS);
+    onCleanup(() => clearTimeout(id));
+  });
 
   return (
-    <Box width={width} borderStyle="round" borderColor="red" paddingX={1}>
-      <Text color="red">⚠ {message}</Text>
-    </Box>
+    <Show when={props.message}>
+      <box
+        borderStyle="rounded"
+        borderColor={colors.danger}
+        paddingLeft={1}
+        paddingRight={1}
+        width={props.width}
+        flexShrink={0}
+      >
+        <text fg={colors.danger}>⚠ {props.message}</text>
+      </box>
+    </Show>
   );
 }

@@ -1,5 +1,5 @@
-import { render } from 'ink';
-import React from 'react';
+import { createCliRenderer } from '@opentui/core';
+import { render } from '@opentui/solid';
 import { App } from '../app/App.js';
 import { launchDaemon, stopDaemon } from '../daemon/daemon.js';
 import { isGitRepo } from '../session/git/util.js';
@@ -19,7 +19,6 @@ export async function runTui(opts: TuiOpts): Promise<void> {
   }
   const config = await loadConfig();
 
-  // Stop any previous daemon; relaunch if autoYes requested.
   await stopDaemon();
   if (opts.autoYes) {
     process.on('beforeExit', () => {
@@ -27,40 +26,57 @@ export async function runTui(opts: TuiOpts): Promise<void> {
     });
   }
 
-  let app = mount();
+  // Attach handler is intentionally async-fire-and-forget from the UI's
+  // perspective: when invoked, it tears down the OpenTUI renderer, attaches
+  // an interactive tmux session, then re-mounts the UI on detach.
+  let detachAndRemount: ((inst: Instance) => Promise<void>) | null = null;
 
-  function mount(): ReturnType<typeof render> {
-    return render(
-      React.createElement(App, {
-        config,
-        repoPath,
-        programOverride: opts.programOverride,
-        autoYes: opts.autoYes,
-        onAttachRequest: handleAttach,
-      }),
-      { exitOnCtrlC: false },
+  async function attachHandler(inst: Instance): Promise<void> {
+    if (!detachAndRemount) throw new Error('UI not yet mounted');
+    await detachAndRemount(inst);
+  }
+
+  await mount();
+
+  async function mount(): Promise<void> {
+    const renderer = await createCliRenderer({
+      exitOnCtrlC: false,
+      targetFps: 30,
+    });
+
+    detachAndRemount = async (inst: Instance) => {
+      if (!(await inst.tmuxAlive())) {
+        throw new Error(`tmux session for ${inst.title} is not alive`);
+      }
+      renderer.stop();
+      renderer.destroy();
+      process.stdout.write('\x1b[2J\x1b[H');
+
+      try {
+        const session = await attachTmux(`claudesquad_${sanitize(inst.title)}`);
+        await session.done;
+      } finally {
+        await mount();
+      }
+    };
+
+    await render(
+      () =>
+        App({
+          config,
+          repoPath,
+          programOverride: opts.programOverride,
+          autoYes: opts.autoYes,
+          onAttachRequest: attachHandler,
+          onExit: () => {
+            renderer.stop();
+            renderer.destroy();
+            process.exit(0);
+          },
+        }),
+      renderer,
     );
   }
-
-  async function handleAttach(instance: Instance): Promise<void> {
-    if (!(await instance.tmuxAlive())) {
-      throw new Error(`tmux session for ${instance.title} is not alive`);
-    }
-    // Unmount Ink so it releases stdin raw-mode.
-    app.unmount();
-    await app.waitUntilExit().catch(() => undefined);
-    process.stdout.write('\x1b[2J\x1b[H'); // clear screen for tmux
-
-    try {
-      const session = await attachTmux(`claudesquad_${sanitize(instance.title)}`);
-      await session.done;
-    } finally {
-      // Re-render Ink. New instance because the previous one has exited.
-      app = mount();
-    }
-  }
-
-  await app.waitUntilExit();
 }
 
 function sanitize(title: string): string {

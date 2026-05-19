@@ -1,6 +1,16 @@
-import { Box, Text, useApp, useInput } from 'ink';
-import type React from 'react';
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import type { TextareaRenderable } from '@opentui/core';
+import { useKeyboard, useTerminalDimensions } from '@opentui/solid';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from 'solid-js';
 import { fetchPrune, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
@@ -8,7 +18,7 @@ import { effectiveProgram, getProfiles } from '../shared/config.js';
 import { BRANCH_SEARCH_DEBOUNCE_MS, MAX_INSTANCES, METADATA_TICK_MS } from '../shared/constants.js';
 import { log } from '../shared/logger.js';
 import { colors } from '../shared/styles.js';
-import type { AppConfig, Profile } from '../shared/types.js';
+import type { AppConfig } from '../shared/types.js';
 import { APP_STATE } from '../shared/types.js';
 import { Diff } from '../ui/components/Diff.js';
 import { ErrorBox } from '../ui/components/ErrorBox.js';
@@ -16,13 +26,9 @@ import { InstanceList } from '../ui/components/List.js';
 import { Menu, type MenuMode } from '../ui/components/Menu.js';
 import { Preview } from '../ui/components/Preview.js';
 import { TabbedWindow } from '../ui/components/TabbedWindow.js';
-import { useDebounced } from '../ui/hooks/useDebounced.js';
-import { useInterval } from '../ui/hooks/useInterval.js';
-import { useTerminalSize } from '../ui/hooks/useTerminalSize.js';
-import { MultilineInput } from '../ui/input/MultilineInput.js';
 import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
-import { type AppModel, initialModel, reduce } from './state.js';
+import { createAppStore } from './state.js';
 
 export interface AppProps {
   config: AppConfig;
@@ -30,456 +36,434 @@ export interface AppProps {
   programOverride?: string;
   autoYes?: boolean;
   onAttachRequest: (instance: Instance) => Promise<void>;
+  onExit: () => void;
 }
 
-const INPUT_ROWS = 3;
+export function App(props: AppProps) {
+  const store = createAppStore();
+  const dims = useTerminalDimensions();
+  const storage = createStorage();
+  const profiles = createMemo(() => getProfiles(props.config));
+  const defaultProgram = createMemo(() => props.programOverride ?? effectiveProgram(props.config));
 
-export function App({
-  config,
-  repoPath,
-  programOverride,
-  autoYes,
-  onAttachRequest,
-}: AppProps): React.ReactElement {
-  const [model, dispatch] = useReducer(reduce, initialModel);
-  const { exit } = useApp();
-  const size = useTerminalSize();
-  const storage = useMemo(() => createStorage(), []);
-  const profiles = useMemo(() => getProfiles(config), [config]);
-  const defaultProgram = programOverride ?? effectiveProgram(config);
+  // Textarea state
+  let textareaRef: TextareaRenderable | undefined;
+  const [inputValue, setInputValue] = createSignal('');
 
   // ===== Persistence: restore + save =====
-  const restored = useRef(false);
-  useEffect(() => {
-    if (restored.current) return;
-    restored.current = true;
-    void (async () => {
-      try {
-        const loaded = await storage.loadInstances(config.branch_prefix);
-        for (const inst of loaded) {
-          if (!inst.isPaused()) {
-            try {
-              await inst.start(false);
-            } catch (err) {
-              log.warn(`failed to restore ${inst.title}`, err);
-            }
+  onMount(async () => {
+    try {
+      const loaded = await storage.loadInstances(props.config.branch_prefix);
+      for (const inst of loaded) {
+        if (!inst.isPaused()) {
+          try {
+            await inst.start(false);
+          } catch (err) {
+            log.warn(`failed to restore ${inst.title}`, err);
           }
         }
-        dispatch({ type: 'set-instances', instances: loaded });
-      } catch (err) {
-        dispatch({ type: 'error', message: errMsg(err) });
       }
-    })();
-  }, [config.branch_prefix, storage]);
+      store.setInstances(loaded);
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  });
 
-  useEffect(() => {
-    void storage.saveInstances(model.instances).catch((err) => log.error('save failed', err));
-  }, [model.instances, storage]);
+  createEffect(() => {
+    void storage.saveInstances(store.model.instances).catch((err) => log.error('save failed', err));
+  });
 
   // ===== Periodic diff refresh =====
-  useInterval(
-    () => {
+  onMount(() => {
+    const id = setInterval(() => {
       void (async () => {
-        for (let i = 0; i < model.instances.length; i++) {
-          const inst = model.instances[i]!;
+        const insts = store.model.instances;
+        for (let i = 0; i < insts.length; i++) {
+          const inst = insts[i]!;
           if (!inst.hasStarted() || inst.isPaused()) continue;
           try {
-            if (i === model.selected) await inst.computeDiff();
+            if (i === store.model.selected) await inst.computeDiff();
             else await inst.computeDiffNumstat();
           } catch {
-            // transient errors are fine; UI will recover next tick
+            // ignore transient git errors
           }
         }
       })();
-    },
-    model.instances.length > 0 ? METADATA_TICK_MS : null,
-  );
+    }, METADATA_TICK_MS);
+    onCleanup(() => clearInterval(id));
+  });
 
   // ===== Branch search (only while in prompt mode) =====
-  const debouncedFilter = useDebounced(model.branchFilter, BRANCH_SEARCH_DEBOUNCE_MS);
-  useEffect(() => {
-    if (model.state !== APP_STATE.Prompt) return;
-    let cancelled = false;
-    void (async () => {
-      await fetchPrune(repoPath).catch(() => undefined);
-      const results = await searchBranches(repoPath, debouncedFilter).catch(() => []);
-      if (!cancelled) {
-        dispatch({ type: 'set-branches', filter: debouncedFilter, results });
-        if (results.length > 0 && !model.selectedBranch) {
-          dispatch({ type: 'select-branch', name: results[0]! });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedFilter, model.state, repoPath, model.selectedBranch]);
-
-  // ===== Layout =====
-  const menuHeight = 1;
-  const bodyHeight = Math.max(10, size.rows - menuHeight);
-  const listWidth = Math.max(30, Math.floor(size.columns * 0.32));
-  const rightWidth = Math.max(40, size.columns - listWidth);
-
-  // Right pane composition (top → bottom inside its border):
-  //   y=0: right-pane border-top
-  //   y=1: tabs bar (1 row)
-  //   y=2..K-1: content area (Preview / Diff, flex)
-  //   y=K..K+inputBoxHeight-1: input box (border + INPUT_ROWS + border)
-  //   y=K+inputBoxHeight: "? for shortcuts" hint
-  //   y=bodyHeight-1: right-pane border-bottom
-  //
-  // The input is anchored to the bottom of the right pane so its position
-  // is deterministic regardless of how much content the preview shows.
-  const cursorAnchor = {
-    x:
-      listWidth /* right pane starts */ +
-      1 /* right-pane border-left */ +
-      1 /* right-pane padX-left */ +
-      1 /* input border-left */ +
-      1 /* input padX-left */,
-    y: bodyHeight - 1 /* border-bottom */ - 1 /* hint */ - 1 /* input border-bottom */ - INPUT_ROWS,
-  };
-
-  const modalOpen = model.state === APP_STATE.Confirm || model.state === APP_STATE.Help;
-  const inputMode: 'default' | 'new-name' | 'new-prompt' =
-    model.state === APP_STATE.New
-      ? 'new-name'
-      : model.state === APP_STATE.Prompt
-        ? 'new-prompt'
-        : 'default';
-  const inputFocused = inputMode !== 'default';
-
-  // ===== Top-level key handling (default mode only) =====
-  useInput(
-    (input, key) => {
-      if (modalOpen || inputFocused) return;
-      if (input === 'q' || (key.ctrl && input === 'c')) {
-        exit();
-        return;
-      }
-      if (input === 'n') {
-        if (model.instances.length >= MAX_INSTANCES) {
-          dispatch({ type: 'error', message: `instance limit reached (${MAX_INSTANCES})` });
-          return;
-        }
-        dispatch({ type: 'press-key', key: 'n' });
-        dispatch({ type: 'open-new-name' });
-        return;
-      }
-      if (input === 'N') {
-        if (model.instances.length >= MAX_INSTANCES) {
-          dispatch({ type: 'error', message: `instance limit reached (${MAX_INSTANCES})` });
-          return;
-        }
-        dispatch({ type: 'press-key', key: 'N' });
-        dispatch({ type: 'open-new-with-prompt' });
-        return;
-      }
-      if (input === '?') {
-        dispatch({ type: 'open-help' });
-        return;
-      }
-      if (key.upArrow || input === 'k') {
-        dispatch({ type: 'move-up' });
-        return;
-      }
-      if (key.downArrow || input === 'j') {
-        dispatch({ type: 'move-down' });
-        return;
-      }
-      if (input === 'K') {
-        dispatch({ type: 'reorder-up' });
-        return;
-      }
-      if (input === 'J') {
-        dispatch({ type: 'reorder-down' });
-        return;
-      }
-      if (key.tab) {
-        dispatch({ type: 'cycle-tab' });
-        return;
-      }
-      const selected = model.instances[model.selected];
-      if (!selected) return;
-      if (key.return || input === 'o') {
-        void onAttachRequest(selected).catch((err) => {
-          dispatch({ type: 'error', message: errMsg(err) });
-        });
-        return;
-      }
-      if (input === 'd') {
-        dispatch({ type: 'press-key', key: 'd' });
-        dispatch({ type: 'open-confirm', action: { kind: 'kill', index: model.selected } });
-        return;
-      }
-      if (input === 'c') {
-        dispatch({ type: 'press-key', key: 'c' });
-        dispatch({ type: 'open-confirm', action: { kind: 'pause', index: model.selected } });
-        return;
-      }
-      if (input === 's') {
-        dispatch({ type: 'press-key', key: 's' });
-        dispatch({ type: 'open-confirm', action: { kind: 'push', index: model.selected } });
-        return;
-      }
-      if (input === 'r') {
-        dispatch({ type: 'press-key', key: 'r' });
-        void (async () => {
-          try {
-            await selected.resume();
-            dispatch({ type: 'replace-instance', instance: selected });
-          } catch (err) {
-            dispatch({ type: 'error', message: errMsg(err) });
+  createEffect(
+    on(
+      () => [store.model.state, inputValue()] as const,
+      ([state, filter]) => {
+        if (state !== APP_STATE.Prompt) return;
+        const id = setTimeout(async () => {
+          await fetchPrune(props.repoPath).catch(() => undefined);
+          const results = await searchBranches(props.repoPath, filter).catch(() => []);
+          store.setBranches(filter, results);
+          if (results.length > 0 && !store.model.selectedBranch) {
+            store.selectBranch(results[0]!);
           }
-        })();
-      }
-    },
-    { isActive: !modalOpen && !inputFocused },
+        }, BRANCH_SEARCH_DEBOUNCE_MS);
+        onCleanup(() => clearTimeout(id));
+      },
+    ),
   );
 
-  // ===== Submit handlers (used by input field) =====
-  const submitNewName = useCallback(
-    async (name: string): Promise<void> => {
-      const input = name.trim();
-      if (!input) {
-        dispatch({ type: 'error', message: 'name required' });
-        return;
-      }
-      if (model.instances.some((i) => i.displayName === input)) {
-        dispatch({ type: 'error', message: `instance "${input}" already exists` });
-        return;
-      }
-      try {
-        const inst = await Instance.create({
-          title: input,
-          path: repoPath,
-          program: defaultProgram,
-          branchPrefix: config.branch_prefix,
-          autoYes: autoYes ?? config.auto_yes,
-          llm: config.llm,
-        });
-        await inst.start(true);
-        dispatch({ type: 'add-instance', instance: inst });
-        dispatch({ type: 'close-overlay' });
-      } catch (err) {
-        dispatch({ type: 'error', message: errMsg(err) });
-      }
-    },
-    [autoYes, config, defaultProgram, model.instances, repoPath],
+  // ===== Global key handling =====
+  // Active only when no modal is open AND the textarea isn't capturing input.
+  const inputFocused = createMemo(
+    () => store.model.state === APP_STATE.New || store.model.state === APP_STATE.Prompt,
+  );
+  const modalOpen = createMemo(
+    () => store.model.state === APP_STATE.Confirm || store.model.state === APP_STATE.Help,
   );
 
-  const submitPrompt = useCallback(
-    async (prompt: string): Promise<void> => {
-      const text = prompt.trim();
-      if (!text) {
-        dispatch({ type: 'error', message: 'prompt required' });
+  useKeyboard((e) => {
+    if (modalOpen() || inputFocused()) return;
+    const name = e.name;
+    const seq = e.sequence;
+
+    if (e.ctrl && name === 'c') {
+      props.onExit();
+      return;
+    }
+    if (seq === 'q') {
+      props.onExit();
+      return;
+    }
+    if (seq === 'n') {
+      if (store.model.instances.length >= MAX_INSTANCES) {
+        store.setError(`instance limit reached (${MAX_INSTANCES})`);
         return;
       }
-      const title = autoTitle(model.instances);
-      const program =
-        profiles.find((p) => p.name === model.selectedProfile)?.program ?? defaultProgram;
-      try {
-        const inst = await Instance.create({
-          title,
-          path: repoPath,
-          program,
-          branchPrefix: config.branch_prefix,
-          autoYes: autoYes ?? config.auto_yes,
-          branch: model.selectedBranch || undefined,
-          prompt: text,
-          llm: config.llm,
-        });
-        await inst.start(true);
-        dispatch({ type: 'add-instance', instance: inst });
-        dispatch({ type: 'close-overlay' });
-      } catch (err) {
-        dispatch({ type: 'error', message: errMsg(err) });
+      store.setPressedKey('n');
+      setInputValue('');
+      store.openNewName();
+      queueMicrotask(() => textareaRef?.focus());
+      return;
+    }
+    if (seq === 'N') {
+      if (store.model.instances.length >= MAX_INSTANCES) {
+        store.setError(`instance limit reached (${MAX_INSTANCES})`);
+        return;
       }
-    },
-    [
-      autoYes,
-      config,
-      defaultProgram,
-      model.instances,
-      model.selectedBranch,
-      model.selectedProfile,
-      profiles,
-      repoPath,
-    ],
-  );
+      store.setPressedKey('N');
+      setInputValue('');
+      store.openNewWithPrompt();
+      queueMicrotask(() => textareaRef?.focus());
+      return;
+    }
+    if (seq === '?') {
+      store.openHelp();
+      return;
+    }
+    if (name === 'up' || seq === 'k') {
+      store.moveSelectionUp();
+      return;
+    }
+    if (name === 'down' || seq === 'j') {
+      store.moveSelectionDown();
+      return;
+    }
+    if (seq === 'K') {
+      store.reorderUp();
+      return;
+    }
+    if (seq === 'J') {
+      store.reorderDown();
+      return;
+    }
+    if (name === 'tab') {
+      store.cycleTab();
+      return;
+    }
+    const selected = store.model.instances[store.model.selected];
+    if (!selected) return;
+    if (name === 'return' || seq === 'o') {
+      void props.onAttachRequest(selected).catch((err) => store.setError(errMsg(err)));
+      return;
+    }
+    if (seq === 'd') {
+      store.setPressedKey('d');
+      store.openConfirm({ kind: 'kill', index: store.model.selected });
+      return;
+    }
+    if (seq === 'c') {
+      store.setPressedKey('c');
+      store.openConfirm({ kind: 'pause', index: store.model.selected });
+      return;
+    }
+    if (seq === 's') {
+      store.setPressedKey('s');
+      store.openConfirm({ kind: 'push', index: store.model.selected });
+      return;
+    }
+    if (seq === 'r') {
+      store.setPressedKey('r');
+      void (async () => {
+        try {
+          await selected.resume();
+          store.replaceInstance(selected);
+        } catch (err) {
+          store.setError(errMsg(err));
+        }
+      })();
+    }
+  });
 
-  const handleConfirm = useCallback(async (): Promise<void> => {
-    const action = model.confirmAction;
+  // ===== Textarea Esc to cancel =====
+  // We use onKeyDown on the textarea to capture Escape (textarea would normally
+  // not propagate it). Escape closes the input mode without submitting.
+  function onTextareaKey(e: { name: string; preventDefault(): void }): void {
+    if (e.name === 'escape') {
+      e.preventDefault();
+      cancelInput();
+    }
+  }
+
+  function cancelInput(): void {
+    setInputValue('');
+    textareaRef?.blur();
+    store.closeOverlay();
+  }
+
+  // ===== Submission =====
+  async function submitInput(): Promise<void> {
+    // Mirror opencode: re-read the textarea's native plainText right before
+    // reading, so a still-composing IME character that hasn't reached the
+    // onContentChange handler yet is captured.
+    const text = textareaRef?.plainText ?? inputValue();
+    if (store.model.state === APP_STATE.New) {
+      await submitNewName(text);
+    } else if (store.model.state === APP_STATE.Prompt) {
+      await submitPrompt(text);
+    }
+  }
+
+  async function submitNewName(rawName: string): Promise<void> {
+    const input = rawName.trim();
+    if (!input) {
+      store.setError('name required');
+      return;
+    }
+    if (store.model.instances.some((i) => i.displayName === input)) {
+      store.setError(`instance "${input}" already exists`);
+      return;
+    }
+    try {
+      const inst = await Instance.create({
+        title: input,
+        path: props.repoPath,
+        program: defaultProgram(),
+        branchPrefix: props.config.branch_prefix,
+        autoYes: props.autoYes ?? props.config.auto_yes,
+        llm: props.config.llm,
+      });
+      await inst.start(true);
+      store.addInstance(inst);
+      setInputValue('');
+      textareaRef?.setText('');
+      textareaRef?.blur();
+      store.closeOverlay();
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  }
+
+  async function submitPrompt(rawPrompt: string): Promise<void> {
+    const text = rawPrompt.trim();
+    if (!text) {
+      store.setError('prompt required');
+      return;
+    }
+    const title = autoTitle(store.model.instances);
+    const program =
+      profiles().find((p) => p.name === store.model.selectedProfile)?.program ?? defaultProgram();
+    try {
+      const inst = await Instance.create({
+        title,
+        path: props.repoPath,
+        program,
+        branchPrefix: props.config.branch_prefix,
+        autoYes: props.autoYes ?? props.config.auto_yes,
+        branch: store.model.selectedBranch || undefined,
+        prompt: text,
+        llm: props.config.llm,
+      });
+      await inst.start(true);
+      store.addInstance(inst);
+      setInputValue('');
+      textareaRef?.setText('');
+      textareaRef?.blur();
+      store.closeOverlay();
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  }
+
+  async function handleConfirm(): Promise<void> {
+    const action = store.model.confirmAction;
     if (!action) return;
-    const inst = model.instances[action.index];
+    const inst = store.model.instances[action.index];
     if (!inst) {
-      dispatch({ type: 'close-overlay' });
+      store.closeOverlay();
       return;
     }
     try {
       if (action.kind === 'kill') {
         await inst.kill();
-        dispatch({ type: 'remove-instance', title: inst.title });
+        store.removeInstance(inst.title);
       } else if (action.kind === 'pause') {
         await inst.pause();
-        dispatch({ type: 'replace-instance', instance: inst });
+        store.replaceInstance(inst);
       } else if (action.kind === 'push') {
         await inst.pushChanges(`[claudesquad] push from ${inst.title}`, true);
       }
     } catch (err) {
-      dispatch({ type: 'error', message: errMsg(err) });
+      store.setError(errMsg(err));
     }
-    dispatch({ type: 'close-overlay' });
-  }, [model.confirmAction, model.instances]);
-
-  // ===== Render =====
-
-  // Modal mode: replace main UI with a centered overlay. These flows don't
-  // need IME tracking so the simpler "swap the tree" approach is fine.
-  if (modalOpen) {
-    const overlayWidth = Math.min(80, Math.max(40, Math.floor(size.columns * 0.7)));
-    return (
-      <Box
-        width={size.columns}
-        height={size.rows}
-        flexDirection="column"
-        alignItems="center"
-        justifyContent="center"
-      >
-        {model.state === APP_STATE.Confirm && (
-          <ConfirmModalContent
-            model={model}
-            width={overlayWidth}
-            onConfirm={() => void handleConfirm()}
-            onCancel={() => dispatch({ type: 'close-overlay' })}
-          />
-        )}
-        {model.state === APP_STATE.Help && (
-          <HelpOverlay width={overlayWidth} onClose={() => dispatch({ type: 'close-overlay' })} />
-        )}
-      </Box>
-    );
+    store.closeOverlay();
   }
 
-  const selectedInstance = model.instances[model.selected] ?? null;
-  const menuMode: MenuMode = menuModeFor(model);
-  const inputPlaceholder =
-    inputMode === 'new-name'
-      ? 'Name new session (中文也可)…'
-      : inputMode === 'new-prompt'
-        ? 'Prompt for new session…'
-        : '? for shortcuts';
+  // ===== Render =====
+  const selectedInstance = createMemo(() => store.model.instances[store.model.selected] ?? null);
+  const menuMode = createMemo<MenuMode>(() => {
+    if (store.model.state === APP_STATE.New) return 'new';
+    if (store.model.state === APP_STATE.Prompt) return 'prompt';
+    if (store.model.instances.length === 0) return 'empty';
+    return 'default';
+  });
+  const inputPlaceholder = createMemo(() => {
+    if (store.model.state === APP_STATE.New) return 'Name new session (中文也可)…';
+    if (store.model.state === APP_STATE.Prompt) return 'Prompt for new session…';
+    return '? for shortcuts';
+  });
 
+  const listWidth = createMemo(() => Math.max(30, Math.floor(dims().width * 0.32)));
+  const overlayWidth = createMemo(() => Math.min(80, Math.max(40, Math.floor(dims().width * 0.7))));
+
+  // ====== Overlay-only branch ======
   return (
-    <Box flexDirection="column" width={size.columns} height={size.rows}>
-      <Box flexDirection="row" height={bodyHeight}>
-        <InstanceList
-          instances={model.instances}
-          selectedIndex={model.selected}
-          width={listWidth}
-          height={bodyHeight}
-          autoYes={autoYes ?? config.auto_yes}
-        />
-        <Box
+    <Switch
+      fallback={
+        // ===== Main UI =====
+        <box flexDirection="column" width={dims().width} height={dims().height}>
+          <box flexDirection="row" flexGrow={1}>
+            <InstanceList
+              instances={store.model.instances}
+              selectedIndex={store.model.selected}
+              width={listWidth()}
+              height={dims().height - 1}
+              autoYes={props.autoYes ?? props.config.auto_yes}
+            />
+            <box
+              flexGrow={1}
+              flexDirection="column"
+              borderStyle="rounded"
+              borderColor={colors.primary}
+              paddingLeft={1}
+              paddingRight={1}
+              gap={0}
+            >
+              <TabbedWindow active={store.model.activeTab}>
+                <Switch>
+                  <Match when={store.model.activeTab === 'preview'}>
+                    <Preview instance={selectedInstance()} />
+                  </Match>
+                  <Match when={store.model.activeTab === 'diff'}>
+                    <Diff instance={selectedInstance()} />
+                  </Match>
+                </Switch>
+              </TabbedWindow>
+              {/* Input — always rendered; focused based on mode */}
+              <box flexDirection="row" flexShrink={0}>
+                <text fg="cyan" attributes={1}>
+                  {'> '}
+                </text>
+                <textarea
+                  flexGrow={1}
+                  ref={(r) => {
+                    textareaRef = r;
+                  }}
+                  placeholder={inputPlaceholder()}
+                  placeholderColor={colors.muted}
+                  focusedTextColor="white"
+                  textColor="white"
+                  focused={inputFocused()}
+                  onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
+                  onSubmit={() => {
+                    // Defer twice so IME flushes the trailing composed character
+                    // (opencode pattern). Without this the last pinyin char can
+                    // be lost when submitting with Enter immediately.
+                    setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
+                  }}
+                  onKeyDown={onTextareaKey}
+                />
+              </box>
+              <text fg={colors.muted}>
+                {inputFocused() ? 'Esc to cancel · ↵ to submit' : '? for shortcuts'}
+              </text>
+            </box>
+          </box>
+          <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
+          <Show when={store.model.error}>
+            <ErrorBox
+              message={store.model.error}
+              width={Math.floor(dims().width * 0.9)}
+              onDismiss={() => store.setError(null)}
+            />
+          </Show>
+        </box>
+      }
+    >
+      {/* ===== Centered modal overlays ===== */}
+      <Match when={store.model.state === APP_STATE.Confirm}>
+        <box
+          width={dims().width}
+          height={dims().height}
           flexDirection="column"
-          width={rightWidth}
-          height={bodyHeight}
-          borderStyle="round"
-          borderColor={colors.primary}
-          paddingX={1}
+          alignItems="center"
+          justifyContent="center"
         >
-          <TabbedWindow
-            active={model.activeTab}
-            width={rightWidth - 4}
-            height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1}
-          >
-            {model.activeTab === 'preview' && (
-              <Preview
-                instance={selectedInstance}
-                width={rightWidth - 4}
-                height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1 - 1}
-              />
-            )}
-            {model.activeTab === 'diff' && (
-              <Diff
-                instance={selectedInstance}
-                width={rightWidth - 4}
-                height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1 - 1}
-              />
-            )}
-          </TabbedWindow>
-          <MultilineInput
-            width={rightWidth - 4}
-            rows={INPUT_ROWS}
-            bordered
-            prefix="> "
-            focus={inputFocused}
-            placeholder={inputPlaceholder}
-            cursorAnchor={cursorAnchor}
-            onSubmit={(v) => {
-              if (inputMode === 'new-name') void submitNewName(v);
-              else if (inputMode === 'new-prompt') void submitPrompt(v);
-            }}
-            onCancel={() => dispatch({ type: 'close-overlay' })}
-            onChange={(v) => {
-              if (inputMode === 'new-prompt') {
-                dispatch({ type: 'set-branches', filter: v, results: model.branchResults });
-              }
-            }}
+          <ConfirmationOverlay
+            message={confirmMessage(store.model)}
+            width={overlayWidth()}
+            onConfirm={() => void handleConfirm()}
+            onCancel={() => store.closeOverlay()}
           />
-          <Box>
-            <Text color={colors.muted}>
-              {inputMode === 'default' ? '? for shortcuts' : 'Esc to cancel'}
-            </Text>
-          </Box>
-        </Box>
-      </Box>
-      <Menu mode={menuMode} pressedKey={model.pressedKey} />
-      {model.error && (
-        <ErrorBox
-          message={model.error}
-          width={Math.floor(size.columns * 0.9)}
-          onDismiss={() => dispatch({ type: 'error', message: null })}
-        />
-      )}
-    </Box>
+        </box>
+      </Match>
+      <Match when={store.model.state === APP_STATE.Help}>
+        <box
+          width={dims().width}
+          height={dims().height}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <HelpOverlay width={overlayWidth()} onClose={() => store.closeOverlay()} />
+        </box>
+      </Match>
+    </Switch>
   );
 }
 
-interface ConfirmModalContentProps {
-  model: AppModel;
-  width: number;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-function ConfirmModalContent({
-  model,
-  width,
-  onConfirm,
-  onCancel,
-}: ConfirmModalContentProps): React.ReactElement {
+function confirmMessage(model: ReturnType<typeof createAppStore>['model']): string {
   const action = model.confirmAction;
-  const inst = action ? model.instances[action.index] : null;
+  if (!action) return '';
+  const inst = model.instances[action.index];
   const name = inst?.displayName || inst?.title;
-  const msg = action
-    ? action.kind === 'kill'
-      ? `Delete instance "${name}" and its worktree?`
-      : action.kind === 'pause'
-        ? `Pause "${name}"? Worktree will be removed but branch kept.`
-        : `Push branch "${inst?.branch}" to origin and open in browser?`
-    : '';
-  return (
-    <ConfirmationOverlay message={msg} width={width} onConfirm={onConfirm} onCancel={onCancel} />
-  );
-}
-
-function menuModeFor(model: AppModel): MenuMode {
-  if (model.state === APP_STATE.New) return 'new';
-  if (model.state === APP_STATE.Prompt) return 'prompt';
-  if (model.instances.length === 0) return 'empty';
-  return 'default';
+  switch (action.kind) {
+    case 'kill':
+      return `Delete instance "${name}" and its worktree?`;
+    case 'pause':
+      return `Pause "${name}"? Worktree will be removed but branch kept.`;
+    case 'push':
+      return `Push branch "${inst?.branch}" to origin and open in browser?`;
+  }
 }
 
 function errMsg(err: unknown): string {
@@ -494,6 +478,3 @@ function autoTitle(instances: Instance[]): string {
   }
   return `${base}-${Date.now()}`;
 }
-
-// Profile type referenced for unused warning suppression in IDE
-export type { Profile };

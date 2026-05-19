@@ -1,45 +1,39 @@
-import { Box, Text } from 'ink';
-import type React from 'react';
+import { For, type JSX } from 'solid-js';
 import { colors } from '../../shared/styles.js';
 
 export type TabId = 'preview' | 'diff';
-
-export interface TabbedWindowProps {
-  active: TabId;
-  width: number;
-  height: number;
-  children: React.ReactNode;
-}
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'preview', label: 'Preview' },
   { id: 'diff', label: 'Diff' },
 ];
 
-export function TabbedWindow({
-  active,
-  width,
-  height,
-  children,
-}: TabbedWindowProps): React.ReactElement {
+export interface TabbedWindowProps {
+  active: TabId;
+  children: JSX.Element;
+}
+
+export function TabbedWindow(props: TabbedWindowProps) {
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <Box width={width} justifyContent="space-around">
-        {TABS.map((t) => (
-          <Box key={t.id} flexGrow={1} justifyContent="center">
-            <Text
-              bold={active === t.id}
-              color={active === t.id ? colors.tabActive : colors.tabInactive}
-            >
-              {active === t.id ? t.label : t.label}
-            </Text>
-          </Box>
-        ))}
-      </Box>
-      <Box flexGrow={1} width={width}>
-        {children}
-      </Box>
-    </Box>
+    <box flexDirection="column" flexGrow={1}>
+      <box flexDirection="row">
+        <For each={TABS}>
+          {(t) => (
+            <box flexGrow={1} justifyContent="center" flexDirection="row">
+              <text
+                fg={props.active === t.id ? colors.tabActive : colors.tabInactive}
+                attributes={props.active === t.id ? 1 : 0}
+              >
+                {props.active === t.id ? `[${t.label}]` : ` ${t.label} `}
+              </text>
+            </box>
+          )}
+        </For>
+      </box>
+      <box flexGrow={1} flexDirection="column">
+        {props.children}
+      </box>
+    </box>
   );
 }
 
