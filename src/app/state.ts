@@ -29,6 +29,12 @@ export interface AppModel {
   /** When set, the user just triggered an action that requires a one-time
    *  onboarding overlay before proceeding. */
   pendingHelp: PendingHelp | null;
+  /** Preview/Diff scroll state. While `scrollMode` is true, the active tab
+   *  shows a frozen scrollback view that the user can move through with
+   *  shift+↑/↓; Esc returns to the live tail. `scrollOffset` is number of
+   *  lines scrolled up from the bottom (0 = pinned to bottom). */
+  scrollMode: boolean;
+  scrollOffset: number;
 }
 
 export type PendingHelp =
@@ -56,6 +62,8 @@ export const initialModel: AppModel = {
   rev: 0,
   helpSeenMask: 0,
   pendingHelp: null,
+  scrollMode: false,
+  scrollOffset: 0,
 };
 
 /**
@@ -210,6 +218,37 @@ export function createAppStore() {
     },
     setPendingHelp(help: PendingHelp | null) {
       setModel('pendingHelp', help);
+    },
+    /** Move scroll one line up; entering scroll mode if not already. */
+    scrollUp() {
+      setModel(
+        produce((m) => {
+          m.scrollMode = true;
+          m.scrollOffset = Math.min(m.scrollOffset + 1, 100_000);
+        }),
+      );
+    },
+    /** Move scroll one line down; leaves scroll mode when reaching bottom. */
+    scrollDown() {
+      setModel(
+        produce((m) => {
+          if (m.scrollOffset <= 1) {
+            m.scrollOffset = 0;
+            m.scrollMode = false;
+          } else {
+            m.scrollOffset -= 1;
+          }
+        }),
+      );
+    },
+    /** Exit scroll mode entirely (Esc handler). */
+    exitScrollMode() {
+      setModel(
+        produce((m) => {
+          m.scrollMode = false;
+          m.scrollOffset = 0;
+        }),
+      );
     },
   };
 }

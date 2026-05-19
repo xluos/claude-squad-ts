@@ -4,6 +4,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  For,
   Match,
   on,
   onCleanup,
@@ -14,6 +15,7 @@ import {
 import { fetchPrune, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
+import { writeClipboard } from '../shared/clipboard.js';
 import { effectiveProgram, getProfiles } from '../shared/config.js';
 import {
   BRANCH_SEARCH_DEBOUNCE_MS,
@@ -189,6 +191,19 @@ export function App(props: AppProps) {
       store.openHelp();
       return;
     }
+    if (name === 'escape' && store.model.scrollMode) {
+      // Esc pops out of preview/diff scroll mode back to the live tail.
+      store.exitScrollMode();
+      return;
+    }
+    if (e.shift && name === 'up') {
+      store.scrollUp();
+      return;
+    }
+    if (e.shift && name === 'down') {
+      store.scrollDown();
+      return;
+    }
     if (name === 'up' || seq === 'k') {
       store.moveSelectionUp();
       return;
@@ -255,13 +270,35 @@ export function App(props: AppProps) {
     }
   });
 
-  // ===== Textarea Esc to cancel =====
-  // We use onKeyDown on the textarea to capture Escape (textarea would normally
-  // not propagate it). Escape closes the input mode without submitting.
+  // ===== Textarea key interception =====
+  // The textarea owns most keys, so we hook onKeyDown to capture the keys
+  // the surrounding prompt UI needs: Esc to cancel, ↑/↓ to navigate the
+  // branch picker when one is visible, and Tab to cycle profiles when
+  // multiple are configured.
   function onTextareaKey(e: { name: string; preventDefault(): void }): void {
     if (e.name === 'escape') {
       e.preventDefault();
       cancelInput();
+      return;
+    }
+    if (store.model.state !== APP_STATE.Prompt) return;
+    const branches = store.model.branchResults;
+    if (branches.length > 0 && (e.name === 'up' || e.name === 'down')) {
+      e.preventDefault();
+      const cur = branches.indexOf(store.model.selectedBranch);
+      const next =
+        e.name === 'up'
+          ? Math.max(0, cur < 0 ? 0 : cur - 1)
+          : Math.min(branches.length - 1, cur < 0 ? 0 : cur + 1);
+      store.selectBranch(branches[next]!);
+      return;
+    }
+    if (e.name === 'tab' && profiles().length > 1) {
+      e.preventDefault();
+      const ps = profiles();
+      const cur = ps.findIndex((p) => p.name === store.model.selectedProfile);
+      const next = ps[(cur + 1 + ps.length) % ps.length]!;
+      store.selectProfile(next.name);
     }
   }
 
@@ -407,6 +444,11 @@ export function App(props: AppProps) {
       } else if (action.kind === 'pause') {
         await inst.pause();
         store.replaceInstance(inst);
+        // Mirror the Go version: stash the branch name on the clipboard so
+        // the user can `git checkout` it elsewhere without re-typing.
+        if (inst.branch) {
+          void writeClipboard(inst.branch).catch(() => undefined);
+        }
       } else if (action.kind === 'push') {
         await inst.pushChanges(`[claudesquad] push from ${inst.title}`, true);
       }
@@ -480,13 +522,44 @@ export function App(props: AppProps) {
                       instance={selectedInstance()}
                       width={previewCols()}
                       height={previewRows()}
+                      scrollMode={store.model.scrollMode}
+                      scrollOffset={store.model.scrollOffset}
+                      onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
                     />
                   </Match>
                   <Match when={store.model.activeTab === 'diff'}>
-                    <Diff instance={selectedInstance()} />
+                    <Diff
+                      instance={selectedInstance()}
+                      height={previewRows()}
+                      scrollMode={store.model.scrollMode}
+                      scrollOffset={store.model.scrollOffset}
+                      onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
+                    />
                   </Match>
                 </Switch>
               </TabbedWindow>
+              {/* Profile picker (only when in Prompt mode + multiple profiles) */}
+              <Show when={store.model.state === APP_STATE.Prompt && profiles().length > 1}>
+                <box flexDirection="row" flexShrink={0} gap={1}>
+                  <text fg={colors.muted}>program:</text>
+                  <For each={profiles()}>
+                    {(p) => {
+                      const active = () =>
+                        (store.model.selectedProfile || profiles()[0]?.name) === p.name;
+                      return (
+                        <text
+                          fg={active() ? colors.accent : colors.muted}
+                          attributes={active() ? 1 : 0}
+                        >
+                          {active() ? `[${p.name}]` : ` ${p.name} `}
+                        </text>
+                      );
+                    }}
+                  </For>
+                  <text fg={colors.muted}>(tab to cycle)</text>
+                </box>
+              </Show>
+
               {/* Input — always rendered; focused based on mode */}
               <box flexDirection="row" flexShrink={0}>
                 <text fg="cyan" attributes={1}>
@@ -512,6 +585,45 @@ export function App(props: AppProps) {
                   onKeyDown={onTextareaKey}
                 />
               </box>
+
+              {/* Branch picker (only when in Prompt mode) */}
+              <Show when={store.model.state === APP_STATE.Prompt}>
+                <box flexDirection="column" flexShrink={0}>
+                  <Show
+                    when={store.model.branchResults.length > 0}
+                    fallback={
+                      <text fg={colors.muted}>
+                        {store.model.branchFilter
+                          ? '(no matching branches — will create new branch from HEAD)'
+                          : '(blank → new branch from HEAD; type to search existing)'}
+                      </text>
+                    }
+                  >
+                    <text fg={colors.muted}>branches (↑↓ to select):</text>
+                    <For each={store.model.branchResults.slice(0, 5)}>
+                      {(b) => {
+                        const active = () => b === store.model.selectedBranch;
+                        return (
+                          <box flexDirection="row">
+                            <text fg={active() ? colors.accent : colors.muted}>
+                              {active() ? '▶ ' : '  '}
+                            </text>
+                            <text fg={active() ? colors.accent : 'white'} wrapMode="none">
+                              {b}
+                            </text>
+                          </box>
+                        );
+                      }}
+                    </For>
+                    <Show when={store.model.branchResults.length > 5}>
+                      <text fg={colors.muted}>
+                        {`  … +${store.model.branchResults.length - 5} more`}
+                      </text>
+                    </Show>
+                  </Show>
+                </box>
+              </Show>
+
               <text fg={colors.muted}>
                 {inputFocused() ? 'Esc to cancel · ↵ to submit' : '? for shortcuts'}
               </text>

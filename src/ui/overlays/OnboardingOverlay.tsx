@@ -52,6 +52,7 @@ export function OnboardingOverlay(props: OnboardingOverlayProps): JSX.Element {
             <text fg="cyan" attributes={1}>
               {props.data?.branch ?? '(unknown)'}
             </text>
+            <text fg={colors.muted}> (in an isolated git worktree)</text>
           </box>
           <box flexDirection="row">
             <text fg={colors.muted}>program: </text>
@@ -71,6 +72,14 @@ export function OnboardingOverlay(props: OnboardingOverlayProps): JSX.Element {
             </text>
             <text> switch tab · </text>
             <text fg="cyan" attributes={1}>
+              c
+            </text>
+            <text> checkout · </text>
+            <text fg="cyan" attributes={1}>
+              s
+            </text>
+            <text> push · </text>
+            <text fg="cyan" attributes={1}>
               d
             </text>
             <text> kill</text>
@@ -83,7 +92,8 @@ export function OnboardingOverlay(props: OnboardingOverlayProps): JSX.Element {
             Checkout session
           </text>
           <text>Changes will be auto-committed locally and the worktree removed.</text>
-          <text>The branch is preserved — you can keep working on it elsewhere.</text>
+          <text>The branch is preserved and its name is copied to your clipboard,</text>
+          <text>so you can `git checkout` it from any other repo.</text>
           <box flexDirection="row">
             <text fg="cyan" attributes={1}>
               r
