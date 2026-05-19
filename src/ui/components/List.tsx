@@ -9,6 +9,9 @@ export interface InstanceListProps {
   width: number;
   height: number;
   autoYes?: boolean;
+  /** Mutation revision counter; pass through so Rows re-evaluate when an
+   *  instance's internal class state changes (status, diff stats, ...). */
+  rev: number;
 }
 
 export function InstanceList(props: InstanceListProps) {
@@ -37,16 +40,32 @@ export function InstanceList(props: InstanceListProps) {
         <Show
           when={props.instances.length > 0}
           fallback={
-            <box paddingTop={1} flexDirection="row">
-              <text fg={colors.muted}>No instances. Press </text>
-              <text fg="cyan">n</text>
-              <text fg={colors.muted}> to create.</text>
+            <box paddingTop={1} flexDirection="column" gap={0}>
+              <text fg={colors.muted}>No sessions yet.</text>
+              <text> </text>
+              <text fg={colors.muted}>
+                <text fg="cyan">n</text>
+                <text fg={colors.muted}> name a new session</text>
+              </text>
+              <text fg={colors.muted}>
+                <text fg="cyan">N</text>
+                <text fg={colors.muted}> start one with a prompt</text>
+              </text>
+              <text fg={colors.muted}>
+                <text fg="cyan">?</text>
+                <text fg={colors.muted}> full help</text>
+              </text>
             </box>
           }
         >
           <For each={props.instances}>
             {(inst, idx) => (
-              <Row instance={inst} index={idx() + 1} selected={idx() === props.selectedIndex} />
+              <Row
+                instance={inst}
+                index={idx() + 1}
+                selected={idx() === props.selectedIndex}
+                rev={props.rev}
+              />
             )}
           </For>
         </Show>
@@ -59,13 +78,29 @@ interface RowProps {
   instance: Instance;
   index: number;
   selected: boolean;
+  rev: number;
 }
 
 function Row(props: RowProps) {
-  const displayName = () => props.instance.displayName || props.instance.title;
-  const branch = () => props.instance.branch || '(pending)';
-  const stats = () => props.instance.diffStats;
-
+  // Every derived value reads `props.rev` first so it re-evaluates when the
+  // app-level revision counter bumps. Without this, mutations to the class
+  // instance's fields (status, diffStats) wouldn't reach the view.
+  const displayName = () => {
+    void props.rev;
+    return props.instance.displayName || props.instance.title;
+  };
+  const branch = () => {
+    void props.rev;
+    return props.instance.branch || '(pending)';
+  };
+  const stats = () => {
+    void props.rev;
+    return props.instance.diffStats;
+  };
+  const status = () => {
+    void props.rev;
+    return props.instance.status;
+  };
   const bg = () => (props.selected ? colors.selectedBg : undefined);
 
   return (
@@ -83,8 +118,8 @@ function Row(props: RowProps) {
             {displayName()}
           </text>
         </box>
-        <text fg={iconColorFor(props.instance.status)} bg={bg()}>
-          {iconFor(props.instance.status)}
+        <text fg={iconColorFor(status())} bg={bg()}>
+          {iconFor(status())}
         </text>
       </box>
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>

@@ -16,7 +16,25 @@ export interface AppModel {
   branchResults: string[];
   selectedBranch: string;
   selectedProfile: string;
+  /**
+   * Monotonic counter that bumps whenever an Instance's internal mutable
+   * state changes (status, diffStats, etc.). Solid stores can't see field
+   * mutations on class instances, so consumers that need to react to
+   * instance-internal changes read this counter to force re-evaluation.
+   */
+  rev: number;
+  /** Bitmask of help screens already shown to the user. Mirrors the Go
+   *  version's `helpScreensSeen` so each contextual overlay shows once. */
+  helpSeenMask: number;
+  /** When set, the user just triggered an action that requires a one-time
+   *  onboarding overlay before proceeding. */
+  pendingHelp: PendingHelp | null;
 }
+
+export type PendingHelp =
+  | { kind: 'attach'; instance: Instance }
+  | { kind: 'instance-start'; instance: Instance }
+  | { kind: 'checkout'; index: number };
 
 export type ConfirmAction =
   | { kind: 'kill'; index: number }
@@ -35,6 +53,9 @@ export const initialModel: AppModel = {
   branchResults: [],
   selectedBranch: '',
   selectedProfile: '',
+  rev: 0,
+  helpSeenMask: 0,
+  pendingHelp: null,
 };
 
 /**
@@ -176,6 +197,19 @@ export function createAppStore() {
     },
     selectProfile(name: string) {
       setModel('selectedProfile', name);
+    },
+    /** Bumped after any class-instance mutation so dependent views can re-derive. */
+    bumpRev() {
+      setModel('rev', (r) => r + 1);
+    },
+    setHelpSeenMask(mask: number) {
+      setModel('helpSeenMask', mask);
+    },
+    markHelpSeen(bit: number) {
+      setModel('helpSeenMask', model.helpSeenMask | bit);
+    },
+    setPendingHelp(help: PendingHelp | null) {
+      setModel('pendingHelp', help);
     },
   };
 }

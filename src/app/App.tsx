@@ -15,8 +15,16 @@ import { fetchPrune, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
 import { effectiveProgram, getProfiles } from '../shared/config.js';
-import { BRANCH_SEARCH_DEBOUNCE_MS, MAX_INSTANCES, METADATA_TICK_MS } from '../shared/constants.js';
+import {
+  BRANCH_SEARCH_DEBOUNCE_MS,
+  HELP_BIT_INSTANCE_ATTACH,
+  HELP_BIT_INSTANCE_CHECKOUT,
+  HELP_BIT_INSTANCE_START,
+  MAX_INSTANCES,
+  METADATA_TICK_MS,
+} from '../shared/constants.js';
 import { log } from '../shared/logger.js';
+import { loadState, markHelpSeen } from '../shared/state.js';
 import { colors } from '../shared/styles.js';
 import type { AppConfig } from '../shared/types.js';
 import { APP_STATE } from '../shared/types.js';
@@ -28,6 +36,7 @@ import { Preview } from '../ui/components/Preview.js';
 import { TabbedWindow } from '../ui/components/TabbedWindow.js';
 import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
+import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
 import { createAppStore } from './state.js';
 
 export interface AppProps {
@@ -53,6 +62,8 @@ export function App(props: AppProps) {
   // ===== Persistence: restore + save =====
   onMount(async () => {
     try {
+      const persisted = await loadState();
+      store.setHelpSeenMask(persisted.help_screens_seen);
       const loaded = await storage.loadInstances(props.config.branch_prefix);
       for (const inst of loaded) {
         if (!inst.isPaused()) {
@@ -73,21 +84,39 @@ export function App(props: AppProps) {
     void storage.saveInstances(store.model.instances).catch((err) => log.error('save failed', err));
   });
 
-  // ===== Periodic diff refresh =====
+  // ===== Periodic metadata refresh =====
+  //
+  // Each tick we (1) reconcile each instance's status with what tmux
+  // actually reports, and (2) recompute diff stats. After mutations we
+  // bump the model's `rev` counter so dependent Solid memos (which read
+  // instance-internal class fields invisible to the store) re-evaluate.
   onMount(() => {
     const id = setInterval(() => {
       void (async () => {
         const insts = store.model.instances;
+        let dirty = false;
         for (let i = 0; i < insts.length; i++) {
           const inst = insts[i]!;
-          if (!inst.hasStarted() || inst.isPaused()) continue;
+          if (!inst.hasStarted()) continue;
+          const prevStatus = inst.status;
           try {
+            await inst.checkAlive();
+          } catch {
+            // ignore
+          }
+          if (inst.status !== prevStatus) dirty = true;
+          if (inst.isPaused() || !inst.hasStarted()) continue;
+          try {
+            const prev = `${inst.diffStats.added}|${inst.diffStats.removed}`;
             if (i === store.model.selected) await inst.computeDiff();
             else await inst.computeDiffNumstat();
+            const next = `${inst.diffStats.added}|${inst.diffStats.removed}`;
+            if (prev !== next) dirty = true;
           } catch {
             // ignore transient git errors
           }
         }
+        if (dirty) store.bumpRev();
       })();
     }, METADATA_TICK_MS);
     onCleanup(() => clearInterval(id));
@@ -183,7 +212,13 @@ export function App(props: AppProps) {
     const selected = store.model.instances[store.model.selected];
     if (!selected) return;
     if (name === 'return' || seq === 'o') {
-      void props.onAttachRequest(selected).catch((err) => store.setError(errMsg(err)));
+      // First-time attach: show the onboarding overlay; on dismiss the
+      // overlay fires the actual attach. After that we go straight in.
+      if ((store.model.helpSeenMask & HELP_BIT_INSTANCE_ATTACH) === 0) {
+        store.setPendingHelp({ kind: 'attach', instance: selected });
+        return;
+      }
+      void doAttach(selected);
       return;
     }
     if (seq === 'd') {
@@ -193,6 +228,12 @@ export function App(props: AppProps) {
     }
     if (seq === 'c') {
       store.setPressedKey('c');
+      // First-time checkout: show the onboarding overlay; on dismiss it
+      // opens the normal confirmation flow.
+      if ((store.model.helpSeenMask & HELP_BIT_INSTANCE_CHECKOUT) === 0) {
+        store.setPendingHelp({ kind: 'checkout', index: store.model.selected });
+        return;
+      }
       store.openConfirm({ kind: 'pause', index: store.model.selected });
       return;
     }
@@ -268,6 +309,7 @@ export function App(props: AppProps) {
       textareaRef?.setText('');
       textareaRef?.blur();
       store.closeOverlay();
+      maybeShowInstanceStartOnboarding(inst);
     } catch (err) {
       store.setError(errMsg(err));
     }
@@ -299,9 +341,55 @@ export function App(props: AppProps) {
       textareaRef?.setText('');
       textareaRef?.blur();
       store.closeOverlay();
+      maybeShowInstanceStartOnboarding(inst);
     } catch (err) {
       store.setError(errMsg(err));
     }
+  }
+
+  function maybeShowInstanceStartOnboarding(inst: Instance): void {
+    if ((store.model.helpSeenMask & HELP_BIT_INSTANCE_START) !== 0) return;
+    store.setPendingHelp({ kind: 'instance-start', instance: inst });
+  }
+
+  async function doAttach(inst: Instance): Promise<void> {
+    try {
+      await props.onAttachRequest(inst);
+    } catch (err) {
+      store.setError(errMsg(err));
+    } finally {
+      // The tmux session may have died while the user was attached (the
+      // agent inside ran `exit`, or the user killed the window). Reconcile
+      // status so the list stops showing a green "running" dot.
+      await inst.checkAlive().catch(() => undefined);
+      store.bumpRev();
+    }
+  }
+
+  function dismissOnboarding(): void {
+    const pending = store.model.pendingHelp;
+    if (!pending) return;
+    let bit: number;
+    switch (pending.kind) {
+      case 'attach':
+        bit = HELP_BIT_INSTANCE_ATTACH;
+        break;
+      case 'instance-start':
+        bit = HELP_BIT_INSTANCE_START;
+        break;
+      case 'checkout':
+        bit = HELP_BIT_INSTANCE_CHECKOUT;
+        break;
+    }
+    store.markHelpSeen(bit);
+    void markHelpSeen(bit).catch(() => undefined);
+    store.setPendingHelp(null);
+
+    // After dismissing, run the action the overlay was gating.
+    if (pending.kind === 'attach') void doAttach(pending.instance);
+    else if (pending.kind === 'checkout')
+      store.openConfirm({ kind: 'pause', index: pending.index });
+    // instance-start is informational — no follow-up action.
   }
 
   async function handleConfirm(): Promise<void> {
@@ -374,6 +462,7 @@ export function App(props: AppProps) {
               width={listWidth()}
               height={dims().height - 1}
               autoYes={props.autoYes ?? props.config.auto_yes}
+              rev={store.model.rev}
             />
             <box
               flexGrow={1}
@@ -465,6 +554,28 @@ export function App(props: AppProps) {
           justifyContent="center"
         >
           <HelpOverlay width={overlayWidth()} onClose={() => store.closeOverlay()} />
+        </box>
+      </Match>
+      <Match when={store.model.pendingHelp !== null}>
+        <box
+          width={dims().width}
+          height={dims().height}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+        >
+          {(() => {
+            const ph = store.model.pendingHelp!;
+            const inst = 'instance' in ph ? ph.instance : null;
+            return (
+              <OnboardingOverlay
+                kind={ph.kind}
+                data={inst ? { branch: inst.branch, program: inst.program } : undefined}
+                width={overlayWidth()}
+                onDismiss={dismissOnboarding}
+              />
+            );
+          })()}
         </box>
       </Match>
     </Switch>

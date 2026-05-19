@@ -342,6 +342,27 @@ export class Instance {
     return this.tmux.exists();
   }
 
+  /**
+   * Reconcile the in-memory status with what tmux actually says. If the
+   * tmux session has died (e.g. the agent ran `exit`, or the user killed
+   * the tmux session manually), demote a Running instance to Ready so the
+   * status icon in the list stops claiming the agent is still alive.
+   *
+   * Returns true if the underlying tmux is alive, false otherwise.
+   */
+  async checkAlive(): Promise<boolean> {
+    if (!this.tmux) return false;
+    // Paused sessions intentionally have no tmux right now — that's fine.
+    if (this.isPaused()) return true;
+    const alive = await this.tmux.exists();
+    if (!alive && this.status === Status.Running) {
+      this.status = Status.Ready;
+      this.started = false;
+      this.updatedAt = new Date();
+    }
+    return alive;
+  }
+
   getWorktree(): Worktree {
     if (!this.worktree) throw new Error('instance has no worktree');
     return this.worktree;
