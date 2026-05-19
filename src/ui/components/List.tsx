@@ -43,18 +43,18 @@ export function InstanceList(props: InstanceListProps) {
             <box paddingTop={1} flexDirection="column" gap={0}>
               <text fg={colors.muted}>No sessions yet.</text>
               <text> </text>
-              <text fg={colors.muted}>
+              <box flexDirection="row">
                 <text fg="cyan">n</text>
                 <text fg={colors.muted}> name a new session</text>
-              </text>
-              <text fg={colors.muted}>
+              </box>
+              <box flexDirection="row">
                 <text fg="cyan">N</text>
                 <text fg={colors.muted}> start one with a prompt</text>
-              </text>
-              <text fg={colors.muted}>
+              </box>
+              <box flexDirection="row">
                 <text fg="cyan">?</text>
                 <text fg={colors.muted}> full help</text>
-              </text>
+              </box>
             </box>
           }
         >
