@@ -274,6 +274,22 @@ export class Instance {
     return this.tmux.capture();
   }
 
+  /**
+   * Resize the detached tmux session so its virtual terminal matches the
+   * preview viewport. Required to make agents (Claude Code, aider, etc.)
+   * lay their UI out at the width we're going to display — otherwise tmux
+   * defaults to 80x24, the captured lines are 80 cells wide, and our
+   * narrower preview pane has to truncate / wrap them.
+   *
+   * Cheap to call repeatedly; tmux is a no-op when the size is unchanged.
+   */
+  async resizeTmux(cols: number, rows: number): Promise<void> {
+    if (!this.tmux || cols <= 0 || rows <= 0) return;
+    this.width = cols;
+    this.height = rows;
+    await this.tmux.resize(cols, rows);
+  }
+
   async previewFullHistory(): Promise<string> {
     if (!this.tmux) return '';
     return this.tmux.capture({ start: '-', end: '-' });

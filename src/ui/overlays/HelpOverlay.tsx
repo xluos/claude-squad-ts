@@ -36,7 +36,9 @@ export function HelpOverlay(props: HelpOverlayProps) {
           </box>
         )}
       </For>
-      <text fg={colors.muted}>During attach: use your tmux prefix + d to detach (default Ctrl+B d)</text>
+      <text fg={colors.muted}>
+        During attach: use your tmux prefix + d to detach (default Ctrl+B d)
+      </text>
     </box>
   );
 }

@@ -345,6 +345,22 @@ export function App(props: AppProps) {
   const listWidth = createMemo(() => Math.max(30, Math.floor(dims().width * 0.32)));
   const overlayWidth = createMemo(() => Math.min(80, Math.max(40, Math.floor(dims().width * 0.7))));
 
+  // Estimated inner content dimensions of the Preview / Diff pane. Used to
+  // resize the underlying tmux session so its captured rows match what the
+  // viewport can actually display.
+  //   - Right column outer width  = dims.width - listWidth
+  //   - right pane chrome         = 1 left border + 1 padX-left + 1 padX-right + 1 right border = 4
+  //   - Preview inner padX        = 1 left + 1 right = 2
+  //   ⇒ content cols              = (dims.width - listWidth) - 4 - 2
+  //   - Right column outer height = dims.height - 1 (menu)
+  //   - right pane chrome         = 1 border-top + 1 border-bot = 2
+  //   - tab bar                   = 1 row
+  //   - input row (single line + prompt prefix) ≈ 1
+  //   - hint                      = 1
+  //   ⇒ content rows              = (dims.height - 1) - 2 - 1 - 1 - 1
+  const previewCols = createMemo(() => Math.max(20, dims().width - listWidth() - 6));
+  const previewRows = createMemo(() => Math.max(8, dims().height - 6));
+
   // ====== Overlay-only branch ======
   return (
     <Switch
@@ -371,7 +387,11 @@ export function App(props: AppProps) {
               <TabbedWindow active={store.model.activeTab}>
                 <Switch>
                   <Match when={store.model.activeTab === 'preview'}>
-                    <Preview instance={selectedInstance()} />
+                    <Preview
+                      instance={selectedInstance()}
+                      width={previewCols()}
+                      height={previewRows()}
+                    />
                   </Match>
                   <Match when={store.model.activeTab === 'diff'}>
                     <Diff instance={selectedInstance()} />

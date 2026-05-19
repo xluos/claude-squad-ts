@@ -7,6 +7,12 @@ import { ansiToStyledText } from '../util/ansi.js';
 
 export interface PreviewProps {
   instance: Instance | null;
+  /** Visible width of the preview content (cells). Passed down so we can
+   *  resize the underlying tmux session to match — without this, lines
+   *  captured at the tmux-default 80 cols overflow the narrower preview
+   *  pane and OpenTUI wraps them, breaking the agent's box-drawing UI. */
+  width: number;
+  height: number;
 }
 
 export function Preview(props: PreviewProps) {
@@ -27,6 +33,24 @@ export function Preview(props: PreviewProps) {
     }
   };
 
+  // Resize the tmux session to match the preview viewport whenever the
+  // viewport or the selected instance changes. Debounced so a rapid resize
+  // doesn't spam tmux.
+  createEffect(
+    on(
+      () => [props.instance?.title, props.width, props.height] as const,
+      ([title, w, h]) => {
+        if (!title || w <= 0 || h <= 0) return;
+        const inst = props.instance;
+        if (!inst) return;
+        const id = setTimeout(() => {
+          inst.resizeTmux(w, h).catch(() => undefined);
+        }, 80);
+        onCleanup(() => clearTimeout(id));
+      },
+    ),
+  );
+
   createEffect(
     on(
       () => props.instance?.title,
@@ -41,7 +65,7 @@ export function Preview(props: PreviewProps) {
   const lines = () => (content() ? content().split('\n') : []);
 
   return (
-    <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1}>
+    <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} overflow="hidden">
       {err() ? (
         <text fg={colors.danger}>{err()}</text>
       ) : !props.instance ? (
@@ -58,12 +82,20 @@ export function Preview(props: PreviewProps) {
 /**
  * One preview line.
  *
- * `<text content={styledText}>` doesn't work in @opentui/solid@0.2.14 because
- * the reconciler's setProp coerces `content` to a string (`\`${value}\``),
- * turning our StyledText into "[object Object]". We bypass that by holding
- * a ref to the TextRenderable and assigning `.content` imperatively in a
- * reactive effect — same effect as setting it via JSX, but skips the
- * stringify path.
+ * Two reconciler workarounds at once:
+ *
+ * 1. `<text content={styledText}>` would otherwise stringify the StyledText
+ *    to "[object Object]" because @opentui/solid@0.2.14's setProp has a
+ *    `case "content"` branch that does `\`${value}\``. We bypass it by
+ *    assigning via `ref.content = ...` which hits the real setter on
+ *    TextRenderable (which natively accepts StyledText).
+ *
+ * 2. `wrapMode="none"` keeps each captured tmux row on a single visual
+ *    line. Without this, OpenTUI soft-wraps any line wider than the
+ *    preview pane, and the agent's box-drawing UI explodes into a
+ *    multi-row mess (see the v0.2 screenshot regression). The
+ *    parent box has `overflow="hidden"`, so the truncated tail is
+ *    invisible rather than bleeding into the next row.
  */
 function StyledLine(props: { line: string }) {
   let ref: TextRenderable | undefined;
@@ -75,10 +107,9 @@ function StyledLine(props: { line: string }) {
 
   return (
     <text
+      wrapMode="none"
       ref={(r: TextRenderable) => {
         ref = r;
-        // Initial value so we don't render an empty line on first paint
-        // before the createEffect above runs.
         r.content = ansiToStyledText(props.line);
       }}
     />
