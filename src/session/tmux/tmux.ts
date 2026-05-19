@@ -49,6 +49,16 @@ export class TmuxSession {
       String(TMUX_HISTORY_LIMIT),
     ]);
     await runCmd('tmux', ['set-option', '-t', this.name, 'mouse', 'on']);
+    // Pin window size to whatever WE resize-window to. Without this,
+    // tmux's default `window-size latest` makes the window track the
+    // most recently attached client — so after the user detaches, the
+    // pane keeps the attach-time dimensions, our explicit resize-back
+    // to preview dims is silently ignored, and the Preview area ends
+    // up smaller than the actual pane → `visibleLines` slices off the
+    // top rows of content. Manual mode honours every resize-window
+    // we issue.
+    await runCmd('tmux', ['set-option', '-t', this.name, 'window-size', 'manual']);
+    await ensureDetachBinding();
   }
 
   async close(): Promise<void> {
@@ -84,6 +94,15 @@ export class TmuxSession {
   }
 
   async resize(cols: number, rows: number): Promise<void> {
+    // Ensure window-size is manual before resizing. For brand-new
+    // sessions start() already sets this, but sessions restored from
+    // state.json never went through start() (the tmux session was
+    // already alive from a previous run), so they may still be on the
+    // default `latest` policy — which would silently ignore our
+    // resize as soon as a client detaches. Idempotent and cheap.
+    await runCmd('tmux', ['set-option', '-t', this.name, 'window-size', 'manual']).catch(
+      () => undefined,
+    );
     await runCmd('tmux', [
       'resize-window',
       '-t',
@@ -109,4 +128,24 @@ export class TmuxSession {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Bind Ctrl+Q (no prefix) → detach-client on the tmux server.
+ *
+ * The `root` key table is server-wide, so a single bind covers every
+ * session this server hosts — including ones we restored from state.json
+ * without going through `start()`. Idempotent: tmux just overwrites the
+ * existing binding each call.
+ *
+ * Why server-wide is acceptable here: claude-squad's tmux sessions all
+ * benefit from Ctrl+Q-to-detach, and the user's own ad-hoc tmux sessions
+ * (if any) gain a reasonable shortcut for the same action.
+ *
+ * Why a tmux-side binding instead of stdin interception: see attach.ts
+ * — Bun + node-pty drops the first redraw bytes due to a tty-stream
+ * timing race, so attach has to run with stdio: 'inherit'.
+ */
+export async function ensureDetachBinding(): Promise<void> {
+  await runCmd('tmux', ['bind-key', '-T', 'root', 'C-q', 'detach-client']).catch(() => undefined);
 }

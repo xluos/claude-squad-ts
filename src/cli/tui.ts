@@ -5,6 +5,7 @@ import { launchDaemon, stopDaemon } from '../daemon/daemon.js';
 import { isGitRepo } from '../session/git/util.js';
 import type { Instance } from '../session/instance.js';
 import { attachTmux } from '../session/tmux/attach.js';
+import { ensureDetachBinding } from '../session/tmux/tmux.js';
 import { loadConfig } from '../shared/config.js';
 import { log } from '../shared/logger.js';
 
@@ -30,6 +31,9 @@ export async function runTui(opts: TuiOpts): Promise<void> {
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     targetFps: 30,
+    // Enable mouse so Preview/Diff can react to wheel events without
+    // forcing users to remember Shift+↑/↓.
+    useMouse: true,
   });
 
   /**
@@ -51,6 +55,10 @@ export async function runTui(opts: TuiOpts): Promise<void> {
       throw new Error(`tmux session for ${inst.title} is not alive`);
     }
     log.info(`attaching to tmux: ${inst.title}`);
+    // Make sure the Ctrl+Q detach binding is set on the tmux server.
+    // Sessions restored from state.json don't run TmuxSession.start(),
+    // so we re-assert here. Idempotent and fast.
+    await ensureDetachBinding();
 
     renderer.suspend();
     // Best-effort: redraw a clean screen for tmux. Suspend already drops
