@@ -158,13 +158,6 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function nextTabId(tab: 'preview' | 'diff' | 'terminal'): 'preview' | 'diff' | 'terminal' {
-  switch (tab) {
-    case 'preview':
-      return 'diff';
-    case 'diff':
-      return 'terminal';
-    case 'terminal':
-      return 'preview';
-  }
+function nextTabId(tab: 'preview' | 'diff'): 'preview' | 'diff' {
+  return tab === 'preview' ? 'diff' : 'preview';
 }

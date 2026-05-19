@@ -38,21 +38,35 @@ export interface MultilineInputProps {
   bordered?: boolean;
   /** Focus the input (defaults to true). */
   focus?: boolean;
+  /**
+   * Absolute screen coordinates (in cells) of the top-left of the input's
+   * **content area** (after any border + padding). When provided, the
+   * terminal cursor will be parked at `(anchor.x + col, anchor.y + row)`
+   * so the macOS IME candidate box anchors on the actual input glyphs.
+   *
+   * Required for IME to work correctly when the input is nested inside
+   * any layout containers — useCursor's coordinates are relative to Ink's
+   * output origin (screen top-left), not the component's local box.
+   */
+  cursorAnchor?: { x: number; y: number };
+  /** Optional inline prefix shown to the left of the text (e.g. "> "). */
+  prefix?: string;
 }
 
 /**
  * Multi-line input with IME-correct cursor placement.
  *
  * Key tricks:
- * - Uses Ink 7's `useCursor` to park the *real* terminal cursor at the visual
- *   cursor coordinate after every frame, so the macOS IME candidate box
- *   anchors on the input.
- * - Uses `usePaste` for bracketed paste so multi-char IME commits and pastes
- *   are atomic rather than per-keystroke.
+ * - Uses Ink 7's `useCursor` to park the *real* terminal cursor at the
+ *   visual cursor coordinate, so the macOS IME candidate box anchors on
+ *   the input. Caller must pass `cursorAnchor` with the absolute screen
+ *   coordinates of the content origin — see prop docs.
+ * - Uses `usePaste` for bracketed paste so multi-char IME commits and
+ *   pastes arrive atomically.
  * - Cursor & wrap math uses graphemes (Intl.Segmenter) and cell-widths
  *   (Bun.stringWidth / string-width), not `s.length`.
  * - Submit path uses `setTimeout(setTimeout)` to give the IME one extra
- *   event-loop turn to flush the trailing committed character (opencode hack).
+ *   event-loop turn to flush the trailing committed character.
  */
 export function MultilineInput(props: MultilineInputProps): React.ReactElement {
   const {
@@ -64,27 +78,30 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
     placeholder,
     rows = 6,
     submitOnEnter = true,
-    bordered = true,
+    bordered = false,
     focus = true,
+    cursorAnchor,
+    prefix = '',
   } = props;
 
   const { stdout } = useStdout();
+  const prefixWidth = cellWidth(prefix);
   const fallbackWidth = Math.max(1, (stdout?.columns ?? 80) - (bordered ? 4 : 2));
-  const width = Math.max(1, props.width ?? fallbackWidth);
+  // Width available for typed text (excluding the prefix).
+  const width = Math.max(1, (props.width ?? fallbackWidth) - prefixWidth);
 
   const controlled = value !== undefined;
   const [internal, setInternal] = useState<TextBuffer>(() =>
     controlled ? fromText(value ?? '') : initialValue ? fromText(initialValue) : emptyBuffer(),
   );
 
-  // Sync controlled value -> internal buffer (only when it really changed).
+  // Sync controlled value -> internal buffer.
   useEffect(() => {
     if (!controlled) return;
     if ((value ?? '') !== internal.text) {
       setInternal(fromText(value ?? '', internal.cursor));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, controlled]);
+  }, [value, controlled, internal.text, internal.cursor]);
 
   const update = useCallback(
     (next: TextBuffer): void => {
@@ -95,10 +112,8 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
     [controlled, onChange, value],
   );
 
-  // Layout for rendering + cursor placement.
   const layout = useMemo(() => layoutWithCursor(internal, width), [internal, width]);
 
-  // Vertical scroll window.
   const [scrollTop, setScrollTop] = useState(0);
   useEffect(() => {
     if (layout.row < scrollTop) setScrollTop(layout.row);
@@ -106,8 +121,6 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
   }, [layout.row, rows, scrollTop]);
 
   const visibleRows = layout.rows.slice(scrollTop, scrollTop + rows);
-  const padOffsetX = bordered ? 1 : 0;
-  const padOffsetY = bordered ? 1 : 0;
 
   // === IME cursor anchor ===
   const { setCursorPosition } = useCursor();
@@ -116,41 +129,60 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
       setCursorPosition(undefined);
       return;
     }
-    setCursorPosition({
-      x: padOffsetX + layout.col,
-      y: padOffsetY + (layout.row - scrollTop),
-    });
+    // Absolute screen position = anchor (content origin) + local cursor +
+    // prefix width (prefix is rendered only on row 0).
+    const localX = layout.col + (layout.row === 0 ? prefixWidth : 0);
+    const localY = layout.row - scrollTop;
+    if (cursorAnchor) {
+      setCursorPosition({
+        x: cursorAnchor.x + localX,
+        y: cursorAnchor.y + localY,
+      });
+    } else {
+      // Best-effort fallback: caller didn't pass an anchor, so the IME box
+      // will sit at the top-left of Ink's output region. Still set the
+      // position so the cursor stays in the input region.
+      setCursorPosition({ x: localX, y: localY });
+    }
     return () => setCursorPosition(undefined);
-  }, [focus, layout.col, layout.row, scrollTop, padOffsetX, padOffsetY, setCursorPosition]);
+  }, [
+    focus,
+    layout.col,
+    layout.row,
+    scrollTop,
+    cursorAnchor?.x,
+    cursorAnchor?.y,
+    prefixWidth,
+    setCursorPosition,
+  ]);
 
   // === Paste ===
   usePaste(
     (text) => {
       if (!focus) return;
-      // Normalise Windows CR-only sequences (ConPTY ships \r without \n).
       const normalised = text.replace(/\r\n?/g, '\n');
       update(insertText(internal, normalised));
     },
     { isActive: focus },
   );
 
-  // === Submission with IME-flush deferral (opencode pattern) ===
   const pendingSubmit = useRef(false);
   const submit = useCallback(() => {
     if (pendingSubmit.current) return;
     pendingSubmit.current = true;
     // Two nested setTimeouts give the IME one extra event-loop turn to flush
-    // any trailing committed character (e.g. last Pinyin character after Space).
+    // any trailing committed character (e.g. last Pinyin char after Space).
     setTimeout(() => {
       setTimeout(() => {
         const text = internal.text;
         pendingSubmit.current = false;
         onSubmit?.(text);
+        // Reset buffer after submit so the next session starts empty.
+        setInternal(emptyBuffer());
       }, 0);
     }, 0);
   }, [internal.text, onSubmit]);
 
-  // === Keystroke handling ===
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -158,11 +190,8 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
         return;
       }
       if (key.return) {
-        if (submitOnEnter && !key.shift) {
-          submit();
-        } else {
-          update(insertText(internal, '\n'));
-        }
+        if (submitOnEnter && !key.shift) submit();
+        else update(insertText(internal, '\n'));
         return;
       }
       if (key.backspace || (key.ctrl && input === 'h')) {
@@ -208,7 +237,6 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
         return;
       }
       if (key.ctrl || key.meta) return;
-      // Plain text (including IME-committed multi-char strings):
       if (input) {
         const normalised = input.replace(/\r\n?/g, '\n');
         update(insertText(internal, normalised));
@@ -219,26 +247,31 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
 
   const showPlaceholder = internal.length === 0 && placeholder;
 
-  // Always render exactly `rows` lines so the box keeps a stable height
-  // regardless of how much text is typed. Cells beyond the current line
-  // are filled with a single space so Ink doesn't collapse the <Text>.
-  const lines: string[] = Array.from({ length: rows }, (_, i) => {
-    if (showPlaceholder && i === 0) return '';
-    const row = visibleRows[i] ?? '';
-    return row.length > 0 ? row : ' ';
-  });
-
   const content = (
-    <Box flexDirection="column" width={width} height={rows}>
+    <Box flexDirection="column" width={width + prefixWidth} height={rows}>
       {showPlaceholder ? (
         <>
-          <Text color="gray">{placeholder}</Text>
+          <Box>
+            {prefix && <Text color="cyan">{prefix}</Text>}
+            <Text color="gray">{placeholder}</Text>
+          </Box>
           {Array.from({ length: rows - 1 }, (_, i) => (
             <Text key={`pad-${i}`}> </Text>
           ))}
         </>
       ) : (
-        lines.map((line, i) => <Text key={i}>{line}</Text>)
+        Array.from({ length: rows }, (_, i) => {
+          const row = visibleRows[i] ?? '';
+          const isFirstVisible = i === 0;
+          return (
+            <Box key={i}>
+              {prefix && (
+                <Text color="cyan">{isFirstVisible ? prefix : ' '.repeat(prefixWidth)}</Text>
+              )}
+              <Text>{row.length > 0 ? row : ' '}</Text>
+            </Box>
+          );
+        })
       )}
     </Box>
   );

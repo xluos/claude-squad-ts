@@ -1,4 +1,4 @@
-import { Box, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { fetchPrune, searchBranches } from '../session/git/util.js';
@@ -7,6 +7,7 @@ import { createStorage } from '../session/storage.js';
 import { effectiveProgram, getProfiles } from '../shared/config.js';
 import { BRANCH_SEARCH_DEBOUNCE_MS, MAX_INSTANCES, METADATA_TICK_MS } from '../shared/constants.js';
 import { log } from '../shared/logger.js';
+import { colors } from '../shared/styles.js';
 import type { AppConfig, Profile } from '../shared/types.js';
 import { APP_STATE } from '../shared/types.js';
 import { Diff } from '../ui/components/Diff.js';
@@ -15,13 +16,12 @@ import { InstanceList } from '../ui/components/List.js';
 import { Menu, type MenuMode } from '../ui/components/Menu.js';
 import { Preview } from '../ui/components/Preview.js';
 import { TabbedWindow } from '../ui/components/TabbedWindow.js';
-import { Terminal } from '../ui/components/Terminal.js';
 import { useDebounced } from '../ui/hooks/useDebounced.js';
 import { useInterval } from '../ui/hooks/useInterval.js';
 import { useTerminalSize } from '../ui/hooks/useTerminalSize.js';
+import { MultilineInput } from '../ui/input/MultilineInput.js';
 import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
-import { TextInputOverlay } from '../ui/overlays/TextInputOverlay.js';
 import { type AppModel, initialModel, reduce } from './state.js';
 
 export interface AppProps {
@@ -31,6 +31,8 @@ export interface AppProps {
   autoYes?: boolean;
   onAttachRequest: (instance: Instance) => Promise<void>;
 }
+
+const INPUT_ROWS = 3;
 
 export function App({
   config,
@@ -46,7 +48,7 @@ export function App({
   const profiles = useMemo(() => getProfiles(config), [config]);
   const defaultProgram = programOverride ?? effectiveProgram(config);
 
-  // Load persisted instances + restore.
+  // ===== Persistence: restore + save =====
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current) return;
@@ -70,12 +72,11 @@ export function App({
     })();
   }, [config.branch_prefix, storage]);
 
-  // Persist after any instance list change.
   useEffect(() => {
     void storage.saveInstances(model.instances).catch((err) => log.error('save failed', err));
   }, [model.instances, storage]);
 
-  // Periodic diff numstat refresh for non-selected, full diff for selected.
+  // ===== Periodic diff refresh =====
   useInterval(
     () => {
       void (async () => {
@@ -86,7 +87,7 @@ export function App({
             if (i === model.selected) await inst.computeDiff();
             else await inst.computeDiffNumstat();
           } catch {
-            // ignore transient git errors
+            // transient errors are fine; UI will recover next tick
           }
         }
       })();
@@ -94,13 +95,12 @@ export function App({
     model.instances.length > 0 ? METADATA_TICK_MS : null,
   );
 
-  // Branch search (debounced) while in the prompt overlay.
+  // ===== Branch search (only while in prompt mode) =====
   const debouncedFilter = useDebounced(model.branchFilter, BRANCH_SEARCH_DEBOUNCE_MS);
   useEffect(() => {
     if (model.state !== APP_STATE.Prompt) return;
     let cancelled = false;
     void (async () => {
-      // Best-effort prefetch first time.
       await fetchPrune(repoPath).catch(() => undefined);
       const results = await searchBranches(repoPath, debouncedFilter).catch(() => []);
       if (!cancelled) {
@@ -113,13 +113,47 @@ export function App({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedFilter, model.state, repoPath]);
+  }, [debouncedFilter, model.state, repoPath, model.selectedBranch]);
 
-  // Global key handling — only active in default state. Overlays use their own useInput.
+  // ===== Layout =====
+  const menuHeight = 1;
+  const bodyHeight = Math.max(10, size.rows - menuHeight);
+  const listWidth = Math.max(30, Math.floor(size.columns * 0.32));
+  const rightWidth = Math.max(40, size.columns - listWidth);
+
+  // Right pane composition (top → bottom inside its border):
+  //   y=0: right-pane border-top
+  //   y=1: tabs bar (1 row)
+  //   y=2..K-1: content area (Preview / Diff, flex)
+  //   y=K..K+inputBoxHeight-1: input box (border + INPUT_ROWS + border)
+  //   y=K+inputBoxHeight: "? for shortcuts" hint
+  //   y=bodyHeight-1: right-pane border-bottom
+  //
+  // The input is anchored to the bottom of the right pane so its position
+  // is deterministic regardless of how much content the preview shows.
+  const cursorAnchor = {
+    x:
+      listWidth /* right pane starts */ +
+      1 /* right-pane border-left */ +
+      1 /* right-pane padX-left */ +
+      1 /* input border-left */ +
+      1 /* input padX-left */,
+    y: bodyHeight - 1 /* border-bottom */ - 1 /* hint */ - 1 /* input border-bottom */ - INPUT_ROWS,
+  };
+
+  const modalOpen = model.state === APP_STATE.Confirm || model.state === APP_STATE.Help;
+  const inputMode: 'default' | 'new-name' | 'new-prompt' =
+    model.state === APP_STATE.New
+      ? 'new-name'
+      : model.state === APP_STATE.Prompt
+        ? 'new-prompt'
+        : 'default';
+  const inputFocused = inputMode !== 'default';
+
+  // ===== Top-level key handling (default mode only) =====
   useInput(
     (input, key) => {
-      if (model.state !== APP_STATE.Default) return;
+      if (modalOpen || inputFocused) return;
       if (input === 'q' || (key.ctrl && input === 'c')) {
         exit();
         return;
@@ -174,8 +208,8 @@ export function App({
         });
         return;
       }
-      if (input === 'D') {
-        dispatch({ type: 'press-key', key: 'D' });
+      if (input === 'd') {
+        dispatch({ type: 'press-key', key: 'd' });
         dispatch({ type: 'open-confirm', action: { kind: 'kill', index: model.selected } });
         return;
       }
@@ -184,8 +218,8 @@ export function App({
         dispatch({ type: 'open-confirm', action: { kind: 'pause', index: model.selected } });
         return;
       }
-      if (input === 'p') {
-        dispatch({ type: 'press-key', key: 'p' });
+      if (input === 's') {
+        dispatch({ type: 'press-key', key: 's' });
         dispatch({ type: 'open-confirm', action: { kind: 'push', index: model.selected } });
         return;
       }
@@ -201,9 +235,10 @@ export function App({
         })();
       }
     },
-    { isActive: model.state === APP_STATE.Default },
+    { isActive: !modalOpen && !inputFocused },
   );
 
+  // ===== Submit handlers (used by input field) =====
   const submitNewName = useCallback(
     async (name: string): Promise<void> => {
       const input = name.trim();
@@ -211,9 +246,6 @@ export function App({
         dispatch({ type: 'error', message: 'name required' });
         return;
       }
-      // Dedupe on the user-visible name (displayName). Title gets auto-derived
-      // from input via Instance.create; collisions there are still possible
-      // but extremely rare and surface as worktree/tmux errors at Start.
       if (model.instances.some((i) => i.displayName === input)) {
         dispatch({ type: 'error', message: `instance "${input}" already exists` });
         return;
@@ -301,19 +333,12 @@ export function App({
     dispatch({ type: 'close-overlay' });
   }, [model.confirmAction, model.instances]);
 
-  const listWidth = Math.max(20, Math.floor(size.columns * 0.3));
-  const rightWidth = Math.max(20, size.columns - listWidth - 1);
-  const bodyHeight = Math.max(8, size.rows - 4);
+  // ===== Render =====
 
-  const selectedInstance = model.instances[model.selected] ?? null;
-  const menuMode: MenuMode = menuModeFor(model);
-  const modalOpen = model.state !== APP_STATE.Default;
-
-  // When a modal is open, the whole frame is replaced by the centered modal.
-  // Ink has no absolute positioning; this is the cleanest way to ensure the
-  // modal sits in the middle of the terminal rather than stacking below
-  // the main panes (the bug we were seeing before).
+  // Modal mode: replace main UI with a centered overlay. These flows don't
+  // need IME tracking so the simpler "swap the tree" approach is fine.
   if (modalOpen) {
+    const overlayWidth = Math.min(80, Math.max(40, Math.floor(size.columns * 0.7)));
     return (
       <Box
         width={size.columns}
@@ -322,42 +347,93 @@ export function App({
         alignItems="center"
         justifyContent="center"
       >
-        <ModalLayer
-          model={model}
-          size={size}
-          profiles={profiles}
-          onNewName={submitNewName}
-          onPrompt={submitPrompt}
-          onConfirm={handleConfirm}
-          onClose={() => dispatch({ type: 'close-overlay' })}
-          onBranchFilter={(filter) =>
-            dispatch({ type: 'set-branches', filter, results: model.branchResults })
-          }
-          onBranchSelect={(name) => dispatch({ type: 'select-branch', name })}
-          onProfileSelect={(name) => dispatch({ type: 'select-profile', name })}
-        />
+        {model.state === APP_STATE.Confirm && (
+          <ConfirmModalContent
+            model={model}
+            width={overlayWidth}
+            onConfirm={() => void handleConfirm()}
+            onCancel={() => dispatch({ type: 'close-overlay' })}
+          />
+        )}
+        {model.state === APP_STATE.Help && (
+          <HelpOverlay width={overlayWidth} onClose={() => dispatch({ type: 'close-overlay' })} />
+        )}
       </Box>
     );
   }
 
+  const selectedInstance = model.instances[model.selected] ?? null;
+  const menuMode: MenuMode = menuModeFor(model);
+  const inputPlaceholder =
+    inputMode === 'new-name'
+      ? 'Name new session (中文也可)…'
+      : inputMode === 'new-prompt'
+        ? 'Prompt for new session…'
+        : '? for shortcuts';
+
   return (
     <Box flexDirection="column" width={size.columns} height={size.rows}>
-      <Box>
+      <Box flexDirection="row" height={bodyHeight}>
         <InstanceList
           instances={model.instances}
           selectedIndex={model.selected}
           width={listWidth}
           height={bodyHeight}
+          autoYes={autoYes ?? config.auto_yes}
         />
-        <TabbedWindow active={model.activeTab} width={rightWidth} height={bodyHeight}>
-          {model.activeTab === 'preview' ? (
-            <Preview instance={selectedInstance} width={rightWidth - 4} height={bodyHeight - 4} />
-          ) : model.activeTab === 'diff' ? (
-            <Diff instance={selectedInstance} width={rightWidth - 4} height={bodyHeight - 4} />
-          ) : (
-            <Terminal instance={selectedInstance} width={rightWidth - 4} height={bodyHeight - 4} />
-          )}
-        </TabbedWindow>
+        <Box
+          flexDirection="column"
+          width={rightWidth}
+          height={bodyHeight}
+          borderStyle="round"
+          borderColor={colors.primary}
+          paddingX={1}
+        >
+          <TabbedWindow
+            active={model.activeTab}
+            width={rightWidth - 4}
+            height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1}
+          >
+            {model.activeTab === 'preview' && (
+              <Preview
+                instance={selectedInstance}
+                width={rightWidth - 4}
+                height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1 - 1}
+              />
+            )}
+            {model.activeTab === 'diff' && (
+              <Diff
+                instance={selectedInstance}
+                width={rightWidth - 4}
+                height={bodyHeight - 2 - (INPUT_ROWS + 2) - 1 - 1}
+              />
+            )}
+          </TabbedWindow>
+          <MultilineInput
+            width={rightWidth - 4}
+            rows={INPUT_ROWS}
+            bordered
+            prefix="> "
+            focus={inputFocused}
+            placeholder={inputPlaceholder}
+            cursorAnchor={cursorAnchor}
+            onSubmit={(v) => {
+              if (inputMode === 'new-name') void submitNewName(v);
+              else if (inputMode === 'new-prompt') void submitPrompt(v);
+            }}
+            onCancel={() => dispatch({ type: 'close-overlay' })}
+            onChange={(v) => {
+              if (inputMode === 'new-prompt') {
+                dispatch({ type: 'set-branches', filter: v, results: model.branchResults });
+              }
+            }}
+          />
+          <Box>
+            <Text color={colors.muted}>
+              {inputMode === 'default' ? '? for shortcuts' : 'Esc to cancel'}
+            </Text>
+          </Box>
+        </Box>
       </Box>
       <Menu mode={menuMode} pressedKey={model.pressedKey} />
       {model.error && (
@@ -371,94 +447,32 @@ export function App({
   );
 }
 
-interface ModalLayerProps {
+interface ConfirmModalContentProps {
   model: AppModel;
-  size: { columns: number; rows: number };
-  profiles: Profile[];
-  onNewName: (name: string) => Promise<void>;
-  onPrompt: (prompt: string) => Promise<void>;
-  onConfirm: () => Promise<void>;
-  onClose: () => void;
-  onBranchFilter: (filter: string) => void;
-  onBranchSelect: (name: string) => void;
-  onProfileSelect: (name: string) => void;
+  width: number;
+  onConfirm: () => void;
+  onCancel: () => void;
 }
 
-function ModalLayer({
+function ConfirmModalContent({
   model,
-  size,
-  profiles,
-  onNewName,
-  onPrompt,
+  width,
   onConfirm,
-  onClose,
-  onBranchSelect,
-  onProfileSelect,
-}: ModalLayerProps): React.ReactElement | null {
-  const overlayWidth = Math.min(80, Math.max(40, Math.floor(size.columns * 0.7)));
-
-  if (model.state === APP_STATE.New) {
-    return (
-      <Box paddingX={2} paddingY={1}>
-        <TextInputOverlay
-          title="New instance"
-          placeholder="Name this session (a-z, 0-9, -)"
-          width={overlayWidth}
-          onSubmit={(v) => void onNewName(v)}
-          onCancel={onClose}
-        />
-      </Box>
-    );
-  }
-  if (model.state === APP_STATE.Prompt) {
-    return (
-      <Box paddingX={2} paddingY={1}>
-        <TextInputOverlay
-          title="New instance with prompt"
-          placeholder="What should the agent do?"
-          width={overlayWidth}
-          profiles={profiles}
-          selectedProfile={model.selectedProfile || profiles[0]?.name}
-          onProfileChange={onProfileSelect}
-          branches={model.branchResults}
-          selectedBranch={model.selectedBranch}
-          onBranchSelect={onBranchSelect}
-          onSubmit={(v) => void onPrompt(v)}
-          onCancel={onClose}
-        />
-      </Box>
-    );
-  }
-  if (model.state === APP_STATE.Confirm) {
-    const action = model.confirmAction;
-    const inst = action ? model.instances[action.index] : null;
-    const name = inst?.displayName || inst?.title;
-    const msg = action
-      ? action.kind === 'kill'
-        ? `Delete instance "${name}" and its worktree?`
-        : action.kind === 'pause'
-          ? `Pause "${name}"? Worktree will be removed but branch kept.`
-          : `Push branch "${inst?.branch}" to origin and open in browser?`
-      : '';
-    return (
-      <Box paddingX={2} paddingY={1}>
-        <ConfirmationOverlay
-          message={msg}
-          width={overlayWidth}
-          onConfirm={() => void onConfirm()}
-          onCancel={onClose}
-        />
-      </Box>
-    );
-  }
-  if (model.state === APP_STATE.Help) {
-    return (
-      <Box paddingX={2} paddingY={1}>
-        <HelpOverlay width={overlayWidth} onClose={onClose} />
-      </Box>
-    );
-  }
-  return null;
+  onCancel,
+}: ConfirmModalContentProps): React.ReactElement {
+  const action = model.confirmAction;
+  const inst = action ? model.instances[action.index] : null;
+  const name = inst?.displayName || inst?.title;
+  const msg = action
+    ? action.kind === 'kill'
+      ? `Delete instance "${name}" and its worktree?`
+      : action.kind === 'pause'
+        ? `Pause "${name}"? Worktree will be removed but branch kept.`
+        : `Push branch "${inst?.branch}" to origin and open in browser?`
+    : '';
+  return (
+    <ConfirmationOverlay message={msg} width={width} onConfirm={onConfirm} onCancel={onCancel} />
+  );
 }
 
 function menuModeFor(model: AppModel): MenuMode {
@@ -480,3 +494,6 @@ function autoTitle(instances: Instance[]): string {
   }
   return `${base}-${Date.now()}`;
 }
+
+// Profile type referenced for unused warning suppression in IDE
+export type { Profile };

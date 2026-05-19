@@ -1,8 +1,8 @@
 import { Box, Text } from 'ink';
-import React from 'react';
+import type React from 'react';
 import { colors } from '../../shared/styles.js';
 
-export type TabId = 'preview' | 'diff' | 'terminal';
+export type TabId = 'preview' | 'diff';
 
 export interface TabbedWindowProps {
   active: TabId;
@@ -14,7 +14,6 @@ export interface TabbedWindowProps {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'preview', label: 'Preview' },
   { id: 'diff', label: 'Diff' },
-  { id: 'terminal', label: 'Terminal' },
 ];
 
 export function TabbedWindow({
@@ -25,26 +24,19 @@ export function TabbedWindow({
 }: TabbedWindowProps): React.ReactElement {
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box>
-        {TABS.map((t, i) => (
-          <React.Fragment key={t.id}>
-            {i > 0 && <Text color="gray"> · </Text>}
+      <Box width={width} justifyContent="space-around">
+        {TABS.map((t) => (
+          <Box key={t.id} flexGrow={1} justifyContent="center">
             <Text
               bold={active === t.id}
               color={active === t.id ? colors.tabActive : colors.tabInactive}
             >
-              {active === t.id ? `[${t.label}]` : ` ${t.label} `}
+              {active === t.id ? t.label : t.label}
             </Text>
-          </React.Fragment>
+          </Box>
         ))}
       </Box>
-      <Box
-        borderStyle="round"
-        borderColor={colors.border}
-        width={width}
-        height={height - 1}
-        paddingX={1}
-      >
+      <Box flexGrow={1} width={width}>
         {children}
       </Box>
     </Box>
@@ -52,6 +44,5 @@ export function TabbedWindow({
 }
 
 export function nextTab(id: TabId): TabId {
-  const idx = TABS.findIndex((t) => t.id === id);
-  return TABS[(idx + 1) % TABS.length]!.id;
+  return id === 'preview' ? 'diff' : 'preview';
 }

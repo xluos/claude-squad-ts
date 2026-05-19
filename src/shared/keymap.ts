@@ -11,8 +11,8 @@ export const KeyName = {
   Tab: 'tab',
   Checkout: 'c',
   Resume: 'r',
-  Submit: 'p',
-  Kill: 'D',
+  Submit: 's',
+  Kill: 'd',
   Help: '?',
   Quit: 'q',
 } as const;
@@ -24,16 +24,15 @@ export interface KeyBinding {
   desc: string;
 }
 
+// Bottom menu bar (separator-joined). Ordering matches the original UI:
+// n new · d kill · ↵/o open · s submit PR · c checkout · tab switch tab · q quit
 export const DEFAULT_BINDINGS: KeyBinding[] = [
   { key: KeyName.New, label: 'n', desc: 'new' },
-  { key: KeyName.Prompt, label: 'N', desc: 'new with prompt' },
-  { key: KeyName.Enter, label: '↵', desc: 'attach' },
-  { key: KeyName.Tab, label: '⇥', desc: 'next tab' },
-  { key: KeyName.Submit, label: 'p', desc: 'push' },
-  { key: KeyName.Checkout, label: 'c', desc: 'pause' },
-  { key: KeyName.Resume, label: 'r', desc: 'resume' },
-  { key: KeyName.Kill, label: 'D', desc: 'kill' },
-  { key: KeyName.Help, label: '?', desc: 'help' },
+  { key: KeyName.Kill, label: 'd', desc: 'kill' },
+  { key: KeyName.Enter, label: '↵/o', desc: 'open' },
+  { key: KeyName.Submit, label: 's', desc: 'submit PR' },
+  { key: KeyName.Checkout, label: 'c', desc: 'checkout' },
+  { key: KeyName.Tab, label: 'tab', desc: 'switch tab' },
   { key: KeyName.Quit, label: 'q', desc: 'quit' },
 ];
 
@@ -42,3 +41,14 @@ export const NEW_INSTANCE_BINDINGS: KeyBinding[] = [
 ];
 
 export const PROMPT_BINDINGS: KeyBinding[] = [{ key: KeyName.Enter, label: '↵', desc: 'submit' }];
+
+// Full help screen — superset of default plus secondary bindings.
+export const HELP_BINDINGS: KeyBinding[] = [
+  ...DEFAULT_BINDINGS,
+  { key: KeyName.Prompt, label: 'N', desc: 'new with prompt' },
+  { key: KeyName.Resume, label: 'r', desc: 'resume paused' },
+  { key: KeyName.MoveUp, label: 'K', desc: 'reorder up' },
+  { key: KeyName.MoveDown, label: 'J', desc: 'reorder down' },
+  { key: KeyName.ShiftUp, label: 'shift+↑', desc: 'scroll preview/diff' },
+  { key: KeyName.ShiftDown, label: 'shift+↓', desc: 'scroll preview/diff' },
+];
