@@ -1,4 +1,5 @@
-import { createEffect, createSignal, on, onCleanup } from 'solid-js';
+import { stripAnsiSequences } from '@opentui/core';
+import { createEffect, createSignal, For, on, onCleanup } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { PREVIEW_TICK_MS } from '../../shared/constants.js';
 import { colors } from '../../shared/styles.js';
@@ -18,14 +19,18 @@ export function Preview(props: PreviewProps) {
       return;
     }
     try {
-      setContent(await inst.preview());
+      const raw = await inst.preview();
+      // tmux capture-pane -e gives us a stream peppered with SGR/CSI escapes.
+      // OpenTUI's <text> doesn't render ANSI inline (it would need StyledText
+      // / extmarks), so we strip the escape sequences for now. Colours are
+      // lost but the content is readable.
+      setContent(stripAnsiSequences(raw));
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
   };
 
-  // Re-fetch when the selected instance changes, and on a 100ms tick.
   createEffect(
     on(
       () => props.instance?.title,
@@ -37,14 +42,18 @@ export function Preview(props: PreviewProps) {
     ),
   );
 
+  const lines = () => (content() ? content().split('\n') : []);
+
   return (
     <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1}>
       {err() ? (
         <text fg={colors.danger}>{err()}</text>
       ) : !props.instance ? (
         <text fg={colors.muted}>Select an instance to preview</text>
+      ) : lines().length === 0 ? (
+        <text fg={colors.muted}>(empty)</text>
       ) : (
-        <text>{content() || ' '}</text>
+        <For each={lines()}>{(line) => <text>{line || ' '}</text>}</For>
       )}
     </box>
   );
