@@ -92,6 +92,16 @@ export function App(props: AppProps) {
   const [inputValue, setInputValue] = createSignal('');
 
   // ===== Persistence: restore + save =====
+  //
+  // Restore-then-save invariant: Solid creates the store with `instances: []`
+  // *before* the async load can populate it. A naïve
+  //   createEffect(() => storage.saveInstances(store.model.instances))
+  // would fire on the very first commit with the empty placeholder and
+  // overwrite state.json before the async load gets a chance to read it
+  // — wiping every previously-created session on every launch. We guard
+  // saves with a `restored` flag that flips to true only after the load
+  // path has finished writing the real list into the store.
+  const [restored, setRestored] = createSignal(false);
   onMount(async () => {
     try {
       const persisted = await loadState();
@@ -109,10 +119,15 @@ export function App(props: AppProps) {
       store.setInstances(loaded);
     } catch (err) {
       store.setError(errMsg(err));
+    } finally {
+      // Always lift the gate, even on error — otherwise a transient load
+      // failure would silently disable persistence for the rest of the run.
+      setRestored(true);
     }
   });
 
   createEffect(() => {
+    if (!restored()) return;
     void storage.saveInstances(store.model.instances).catch((err) => log.error('save failed', err));
   });
 
