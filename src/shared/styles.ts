@@ -19,7 +19,11 @@ export const colors = {
   diffAdded: '#16A34A',
   diffRemoved: '#DC2626',
 
-  selectedBg: '#1E293B',
+  // Light blue-grey, matches the Go reference's `selectedTitleStyle.Background`
+  // (`#dde4f0`). Pairs with `selectedFg` for readable dark text.
+  selectedBg: '#dde4f0',
+  selectedFg: '#1a1a1a',
+  selectedBranch: '#444444',
   tabActive: '#FFFFFF',
   tabInactive: '#6B7280',
 } as const;

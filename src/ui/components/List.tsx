@@ -109,20 +109,23 @@ function Row(props: RowProps) {
     void props.rev;
     return props.instance.status;
   };
+  // Mirror the Go reference: selected rows use a light-blue-grey background
+  // (#dde4f0) with dark text for contrast. Padding-X gives the band of
+  // colour breathing room from the outer border instead of butting against
+  // it like before.
   const bg = () => (props.selected ? colors.selectedBg : undefined);
+  const titleFg = () => (props.selected ? colors.selectedFg : 'white');
+  const indexFg = () => (props.selected ? colors.selectedFg : colors.muted);
+  const branchFg = () => (props.selected ? colors.selectedBranch : colors.muted);
 
   return (
-    <box flexDirection="column" backgroundColor={bg()}>
+    <box flexDirection="column" backgroundColor={bg()} paddingLeft={1} paddingRight={1}>
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
         <box flexDirection="row" backgroundColor={bg()}>
-          <text fg={colors.muted} bg={bg()}>
+          <text fg={indexFg()} bg={bg()}>
             {`${props.index}. `}
           </text>
-          <text
-            fg={props.selected ? colors.accent : 'white'}
-            attributes={props.selected ? 1 : 0}
-            bg={bg()}
-          >
+          <text fg={titleFg()} attributes={props.selected ? 1 : 0} bg={bg()}>
             {displayName()}
           </text>
         </box>
@@ -131,13 +134,13 @@ function Row(props: RowProps) {
         </text>
       </box>
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
-        <text fg={colors.muted} bg={bg()}>
+        <text fg={branchFg()} bg={bg()}>
           {`   λ-${branch()}`}
         </text>
         <Show when={stats().added > 0 || stats().removed > 0}>
           <box flexDirection="row" backgroundColor={bg()}>
             <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
-            <text fg={colors.muted} bg={bg()}>
+            <text fg={branchFg()} bg={bg()}>
               ,
             </text>
             <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
