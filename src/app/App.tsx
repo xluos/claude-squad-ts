@@ -410,11 +410,16 @@ export function App(props: AppProps) {
   }
 
   async function doAttach(inst: Instance): Promise<void> {
+    // Grow tmux to the full terminal before handing off so the user sees
+    // the agent at native size, not at the narrow preview-pane size.
+    await inst.resizeTmux(dims().width, dims().height).catch(() => undefined);
     try {
       await props.onAttachRequest(inst);
     } catch (err) {
       store.setError(errMsg(err));
     } finally {
+      // Back in the embedded preview — shrink tmux to match the preview pane.
+      await inst.resizeTmux(previewCols(), previewRows()).catch(() => undefined);
       // The tmux session may have died while the user was attached (the
       // agent inside ran `exit`, or the user killed the window). Reconcile
       // status so the list stops showing a green "running" dot.

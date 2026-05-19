@@ -26,7 +26,7 @@ const SECTIONS: SectionDef[] = [
       ['↑/k, ↓/j', 'Navigate between sessions'],
       ['J / K', 'Reorder sessions down / up'],
       ['↵ / o', 'Attach to the selected session'],
-      ['tmux prefix + d', 'Detach from an attached session'],
+      ['Ctrl+Q', 'Detach from an attached session (or tmux prefix + d)'],
     ],
   },
   {

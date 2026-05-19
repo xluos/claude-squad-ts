@@ -36,9 +36,9 @@ export function OnboardingOverlay(props: OnboardingOverlayProps): JSX.Element {
           <text>The session runs inside tmux. To return to claude-squad:</text>
           <box flexDirection="row">
             <text fg="cyan" attributes={1}>
-              tmux prefix + d
+              Ctrl+Q
             </text>
-            <text fg={colors.muted}> (default: Ctrl+B then d)</text>
+            <text fg={colors.muted}> — or the native tmux prefix + d (default Ctrl+B d)</text>
           </box>
           <text fg={colors.muted}>Press any key to attach.</text>
         </Match>
