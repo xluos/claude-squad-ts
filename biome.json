@@ -25,7 +25,8 @@
       },
       "suspicious": {
         "noExplicitAny": "warn",
-        "noArrayIndexKey": "off"
+        "noArrayIndexKey": "off",
+        "noControlCharactersInRegex": "off"
       },
       "correctness": {
         "noUnusedVariables": "warn",

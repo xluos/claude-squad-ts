@@ -1,8 +1,8 @@
-import { stripAnsiSequences } from '@opentui/core';
 import { createEffect, createSignal, For, on, onCleanup } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { PREVIEW_TICK_MS } from '../../shared/constants.js';
 import { colors } from '../../shared/styles.js';
+import { ansiToStyledText } from '../util/ansi.js';
 
 export interface PreviewProps {
   instance: Instance | null;
@@ -19,12 +19,7 @@ export function Preview(props: PreviewProps) {
       return;
     }
     try {
-      const raw = await inst.preview();
-      // tmux capture-pane -e gives us a stream peppered with SGR/CSI escapes.
-      // OpenTUI's <text> doesn't render ANSI inline (it would need StyledText
-      // / extmarks), so we strip the escape sequences for now. Colours are
-      // lost but the content is readable.
-      setContent(stripAnsiSequences(raw));
+      setContent(await inst.preview());
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -42,6 +37,10 @@ export function Preview(props: PreviewProps) {
     ),
   );
 
+  // Split the raw tmux capture on newlines so each visual row is its own
+  // <text> with its own StyledText. This keeps OpenTUI's wide-character
+  // wrapping correct (it measures each line independently) and avoids the
+  // single-string layout glitch that mangled the box-drawing glyphs.
   const lines = () => (content() ? content().split('\n') : []);
 
   return (
@@ -53,7 +52,7 @@ export function Preview(props: PreviewProps) {
       ) : lines().length === 0 ? (
         <text fg={colors.muted}>(empty)</text>
       ) : (
-        <For each={lines()}>{(line) => <text>{line || ' '}</text>}</For>
+        <For each={lines()}>{(line) => <text content={ansiToStyledText(line || ' ')} />}</For>
       )}
     </box>
   );
