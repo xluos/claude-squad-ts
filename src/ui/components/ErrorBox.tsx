@@ -4,6 +4,8 @@ import { colors } from '../../shared/styles.js';
 
 export interface ErrorBoxProps {
   message: string | null;
+  /** Visual level — 'error' (red ⚠) or 'info' (green ✓). Defaults to 'error'. */
+  kind?: 'error' | 'info';
   width?: number;
   onDismiss?: () => void;
 }
@@ -19,13 +21,16 @@ export function ErrorBox(props: ErrorBoxProps) {
     <Show when={props.message}>
       <box
         borderStyle="rounded"
-        borderColor={colors.danger}
+        borderColor={props.kind === 'info' ? colors.success : colors.danger}
         paddingLeft={1}
         paddingRight={1}
         width={props.width}
         flexShrink={0}
       >
-        <text fg={colors.danger}>⚠ {props.message}</text>
+        <text fg={props.kind === 'info' ? colors.success : colors.danger}>
+          {props.kind === 'info' ? '✓ ' : '⚠ '}
+          {props.message}
+        </text>
       </box>
     </Show>
   );

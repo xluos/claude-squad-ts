@@ -1,13 +1,20 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { colors } from '../../shared/styles.js';
+import { PausedView } from './PausedView.js';
 
 export interface DiffProps {
   instance: Instance | null;
+  /** True when the selected instance is paused (checked out) — its
+   * worktree has been removed, so running `git diff` against the path
+   * would error. We skip the call and render a hint instead. */
+  paused: boolean;
   height: number;
   scrollMode: boolean;
   scrollOffset: number;
   onScroll?: (direction: 'up' | 'down') => void;
+  /** Report the max scrollable offset so the store can gate `scrollUp`. */
+  onScrollLimit?: (max: number) => void;
 }
 
 export function Diff(props: DiffProps) {
@@ -16,11 +23,17 @@ export function Diff(props: DiffProps) {
 
   createEffect(
     on(
-      () => props.instance?.title,
-      async () => {
+      () => [props.instance?.title, props.paused] as const,
+      async ([, paused]) => {
         const inst = props.instance;
         if (!inst) {
           setContent('');
+          setErr(null);
+          return;
+        }
+        if (paused) {
+          setContent('');
+          setErr(null);
           return;
         }
         try {
@@ -46,6 +59,14 @@ export function Diff(props: DiffProps) {
     return all.slice(start, end);
   });
 
+  createEffect(() => {
+    if (!props.scrollMode) return;
+    const total = lines().length;
+    if (total === 0) return;
+    const cap = Math.max(1, props.height - 1);
+    props.onScrollLimit?.(Math.max(0, total - cap));
+  });
+
   return (
     <box
       flexGrow={1}
@@ -62,6 +83,8 @@ export function Diff(props: DiffProps) {
         <text fg={colors.danger}>{err()}</text>
       ) : !props.instance ? (
         <text fg={colors.muted}>Select an instance to view diff</text>
+      ) : props.paused ? (
+        <PausedView pane="diff" branch={props.instance?.branch} />
       ) : !content() ? (
         <text fg={colors.muted}>No changes yet</text>
       ) : (

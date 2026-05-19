@@ -173,6 +173,30 @@ export class Instance {
     return this.status === Status.Paused;
   }
 
+  /**
+   * Whether the worktree has uncommitted changes. Read-only — used by
+   * the merge overlay to warn the user that a confirm will auto-commit
+   * pending edits before the actual merge runs.
+   */
+  async isDirty(): Promise<boolean> {
+    if (!this.worktree) return false;
+    return this.worktree.isDirty();
+  }
+
+  /**
+   * If the worktree has uncommitted changes, commit them all to the
+   * instance's branch with the given message. Returns true when a
+   * commit was actually made. Pre-merge / pre-checkout flows call this
+   * so the agent's in-flight edits don't get stranded as "dirty but
+   * not on any branch".
+   */
+  async commitDirty(msg: string): Promise<boolean> {
+    if (!this.worktree) return false;
+    if (!(await this.worktree.isDirty())) return false;
+    await this.worktree.commit(msg);
+    return true;
+  }
+
   worktreePath(): string {
     return this.worktree?.data.worktree_path ?? '';
   }

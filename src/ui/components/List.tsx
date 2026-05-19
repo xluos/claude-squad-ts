@@ -22,7 +22,17 @@ export interface InstanceListProps {
 export function InstanceList(props: InstanceListProps) {
   return (
     <box flexDirection="column" width={props.width} height={props.height}>
-      <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
+      {/* Top spacer: the right column's tab strip is 2 rows tall
+       *  (label row + ━ underline row). One blank row above the chip
+       *  on the left lines the InstanceList border top up with the
+       *  TabbedWindow content-area border top on the right. */}
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingLeft={1}
+        paddingRight={1}
+        marginTop={1}
+      >
         <text bg={colors.primary} fg="white" attributes={1}>
           {' Instances '}
         </text>

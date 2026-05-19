@@ -67,6 +67,7 @@ export const APP_STATE = {
   Prompt: 2,
   Help: 3,
   Confirm: 4,
+  Merge: 5,
 } as const;
 export type AppStateValue = (typeof APP_STATE)[keyof typeof APP_STATE];
 

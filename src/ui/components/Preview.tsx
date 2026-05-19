@@ -4,9 +4,15 @@ import type { Instance } from '../../session/instance.js';
 import { PREVIEW_TICK_MS } from '../../shared/constants.js';
 import { colors } from '../../shared/styles.js';
 import { ansiToStyledText } from '../util/ansi.js';
+import { Logo } from './Logo.js';
+import { PausedView } from './PausedView.js';
 
 export interface PreviewProps {
   instance: Instance | null;
+  /** True when the selected instance has been checked out (paused) — its
+   * tmux session has been killed, so we render a hint instead of probing
+   * a dead session and showing the empty capture. */
+  paused: boolean;
   width: number;
   height: number;
   /** Frozen scrollback view while true; tail follow when false. */
@@ -15,6 +21,10 @@ export interface PreviewProps {
   scrollOffset: number;
   /** Mouse-wheel callback (delta: positive = down, negative = up). */
   onScroll?: (direction: 'up' | 'down') => void;
+  /** Report the max scrollable offset so the store can gate `scrollUp`
+   *  once the user has hit the top of the buffer. Computed from the
+   *  current content source (history while scrolling) and viewport. */
+  onScrollLimit?: (max: number) => void;
 }
 
 export function Preview(props: PreviewProps) {
@@ -39,9 +49,9 @@ export function Preview(props: PreviewProps) {
   // Resize tmux to viewport whenever it changes.
   createEffect(
     on(
-      () => [props.instance?.title, props.width, props.height] as const,
-      ([title, w, h]) => {
-        if (!title || w <= 0 || h <= 0) return;
+      () => [props.instance?.title, props.paused, props.width, props.height] as const,
+      ([title, paused, w, h]) => {
+        if (!title || paused || w <= 0 || h <= 0) return;
         const inst = props.instance;
         if (!inst) return;
         const id = setTimeout(() => {
@@ -55,9 +65,17 @@ export function Preview(props: PreviewProps) {
   // Live tail: refresh every 100ms while not in scroll mode.
   createEffect(
     on(
-      () => [props.instance?.title, props.scrollMode] as const,
-      ([title, scrolling]) => {
+      () => [props.instance?.title, props.paused, props.scrollMode] as const,
+      ([title, paused, scrolling]) => {
         if (!title) return;
+        if (paused) {
+          // Paused (checked out): tmux is gone — drop any stale capture so
+          // a later resume doesn't briefly flash the previous content.
+          setLiveContent('');
+          setHistoryContent('');
+          setErr(null);
+          return;
+        }
         if (scrolling) return; // Frozen view; the history snapshot already loaded.
         void refreshLive();
         const id = setInterval(() => void refreshLive(), PREVIEW_TICK_MS);
@@ -69,9 +87,9 @@ export function Preview(props: PreviewProps) {
   // Capture full scrollback once when entering scroll mode.
   createEffect(
     on(
-      () => [props.instance?.title, props.scrollMode] as const,
-      async ([title, scrolling]) => {
-        if (!title || !scrolling) return;
+      () => [props.instance?.title, props.paused, props.scrollMode] as const,
+      async ([title, paused, scrolling]) => {
+        if (!title || paused || !scrolling) return;
         const inst = props.instance;
         if (!inst) return;
         try {
@@ -83,10 +101,18 @@ export function Preview(props: PreviewProps) {
     ),
   );
 
-  /** Lines from whichever source the current mode selects. */
+  /** Lines from whichever source the current mode selects.
+   *  tmux capture-pane terminates its output with a trailing `\n`, so a
+   *  naive `split('\n')` produces N+1 elements (N real lines + 1 empty
+   *  string at the end). With `cap = props.height = pane rows`, the
+   *  bottom-aligned slice `[length-cap, length)` then silently drops
+   *  the FIRST real line. Trim the trailing newline once so length ==
+   *  actual line count. */
   const allLines = createMemo(() => {
-    const src = props.scrollMode ? historyContent() : liveContent();
-    return src ? src.split('\n') : [];
+    const raw = props.scrollMode ? historyContent() : liveContent();
+    if (!raw) return [];
+    const src = raw.endsWith('\n') ? raw.slice(0, -1) : raw;
+    return src.split('\n');
   });
 
   /** Window of lines actually rendered, bottom-aligned with offset applied. */
@@ -100,12 +126,36 @@ export function Preview(props: PreviewProps) {
     return all.slice(start, end);
   });
 
+  // Push scrollMax to the store whenever content/height changes while in
+  // scroll mode. Pinned-to-bottom mode doesn't need a limit (it's always
+  // showing the tail).
+  createEffect(() => {
+    if (!props.scrollMode) return;
+    const total = allLines().length;
+    if (total === 0) return;
+    const cap = Math.max(1, props.height - 1);
+    props.onScrollLimit?.(Math.max(0, total - cap));
+  });
+
   return (
-    <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} overflow="hidden">
+    <box
+      flexGrow={1}
+      flexDirection="column"
+      paddingLeft={1}
+      paddingRight={1}
+      overflow="hidden"
+      onMouseScroll={(e) => {
+        const dir = e.scroll?.direction;
+        if (dir === 'up') props.onScroll?.('up');
+        else if (dir === 'down') props.onScroll?.('down');
+      }}
+    >
       {err() ? (
-        <text fg={colors.danger}>{err()}</text>
+        <Logo caption={`Error: ${err()}`} />
       ) : !props.instance ? (
-        <text fg={colors.muted}>Select an instance to preview</text>
+        <Logo caption="Press n to create a new session — N for one with a prompt" />
+      ) : props.paused ? (
+        <PausedView pane="preview" branch={props.instance?.branch} />
       ) : visibleLines().length === 0 ? (
         <text fg={colors.muted}>(empty)</text>
       ) : (

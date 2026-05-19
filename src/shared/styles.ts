@@ -2,14 +2,16 @@
 // Ink accepts named colors (red/green/...), hex (#abc / #aabbcc), and chalk RGB triplets.
 
 export const colors = {
-  primary: '#7D56F4',
+  // Charm 经典紫 #7D56F4 降饱和+降明度一档：在 Logo / List 选中条 / Tab / 边框
+  // 这种大色块用法下不再扎眼。色相基本保留（251°），饱和 87→39，明度 65→52。
+  primary: '#6755B5',
   accent: '#FFA500',
   success: '#22C55E',
   danger: '#EF4444',
   warning: '#F59E0B',
   muted: '#6B7280',
   border: '#374151',
-  borderActive: '#7D56F4',
+  borderActive: '#6755B5',
 
   statusRunning: '#22C55E',
   statusReady: '#3B82F6',
@@ -25,7 +27,7 @@ export const colors = {
   selectedFg: '#1a1a1a',
   selectedBranch: '#444444',
   tabActive: '#FFFFFF',
-  tabInactive: '#6B7280',
+  tabInactive: '#9CA3AF',
 } as const;
 
 export const icons = {

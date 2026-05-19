@@ -12,6 +12,7 @@ import {
   Show,
   Switch,
 } from 'solid-js';
+import { mergeIntoHost, precheckMerge } from '../session/git/merge.js';
 import { fetchPrune, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
@@ -39,6 +40,7 @@ import { Preview } from '../ui/components/Preview.js';
 import { TabbedWindow } from '../ui/components/TabbedWindow.js';
 import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
+import { agentLabel, MergeOverlay } from '../ui/overlays/MergeOverlay.js';
 import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
 import { createAppStore } from './state.js';
 
@@ -128,6 +130,14 @@ export function App(props: AppProps) {
 
   createEffect(() => {
     if (!restored()) return;
+    // Tracking trap: Solid's createStore + `produce(m => m.instances.push(...))`
+    // mutates the array in place, so just reading `store.model.instances`
+    // doesn't register a dep on length/index changes. Read `length` AND
+    // `rev` so the effect re-runs on (a) add/remove and (b) any
+    // bumpRev-emitting field mutation (status flips, branch resolves,
+    // diff stats refresh).
+    void store.model.instances.length;
+    void store.model.rev;
     void storage.saveInstances(store.model.instances).catch((err) => log.error('save failed', err));
   });
 
@@ -194,18 +204,36 @@ export function App(props: AppProps) {
     () => store.model.state === APP_STATE.New || store.model.state === APP_STATE.Prompt,
   );
   const modalOpen = createMemo(
-    () => store.model.state === APP_STATE.Confirm || store.model.state === APP_STATE.Help,
+    () =>
+      store.model.state === APP_STATE.Confirm ||
+      store.model.state === APP_STATE.Help ||
+      store.model.state === APP_STATE.Merge,
   );
 
   useKeyboard((e) => {
     if (modalOpen() || inputFocused()) return;
     const name = e.name;
     const seq = e.sequence;
+    // Cmd / Option / Hyper modifier: skip our letter shortcuts so e.g.
+    // Cmd+C (macOS copy) doesn't accidentally trigger the checkout
+    // confirmation. ctrl is excluded from the guard because Ctrl+C
+    // legitimately means "quit" below. Note: terminals that don't
+    // implement the Kitty keyboard protocol can't report Cmd at all —
+    // for those, the user has to configure their terminal app to
+    // intercept Cmd+C as system clipboard (Ghostty / iTerm2 / Terminal
+    // do by default).
+    const modified = Boolean(
+      (e as { super?: boolean; hyper?: boolean }).super ||
+        (e as { hyper?: boolean }).hyper ||
+        e.meta ||
+        e.option,
+    );
 
     if (e.ctrl && name === 'c') {
       props.onExit();
       return;
     }
+    if (modified) return;
     if (seq === 'q') {
       props.onExit();
       return;
@@ -216,11 +244,16 @@ export function App(props: AppProps) {
         return;
       }
       store.setPressedKey('n');
-      setInputValue('');
-      store.openNewName();
-      // Focus the inline list-row textarea (rendered as the placeholder for
-      // the not-yet-created session) — not the prompt-pane textarea.
-      queueMicrotask(() => nameTextareaRef?.focus());
+      // Defer the state mutation + focus to the next microtask. Without
+      // this, OpenTUI's still-in-flight 'n' keypress reaches the freshly
+      // focused NewInstanceRow textarea and gets typed into the buffer.
+      // By the time the microtask runs, the original key event has been
+      // fully dispatched, so the textarea sees only future keystrokes.
+      queueMicrotask(() => {
+        setInputValue('');
+        store.openNewName();
+        nameTextareaRef?.focus();
+      });
       return;
     }
     if (seq === 'N') {
@@ -229,9 +262,13 @@ export function App(props: AppProps) {
         return;
       }
       store.setPressedKey('N');
-      setInputValue('');
-      store.openNewWithPrompt();
-      queueMicrotask(() => textareaRef?.focus());
+      // Same rationale as the `n` branch — defer so the triggering key
+      // doesn't end up in the prompt-pane textarea.
+      queueMicrotask(() => {
+        setInputValue('');
+        store.openNewWithPrompt();
+        textareaRef?.focus();
+      });
       return;
     }
     if (seq === '?') {
@@ -274,6 +311,13 @@ export function App(props: AppProps) {
     const selected = store.model.instances[store.model.selected];
     if (!selected) return;
     if (name === 'return' || seq === 'o') {
+      // Paused instances no longer have a worktree — attaching would
+      // drop the user into a tmux pane running in a deleted directory.
+      // Force them through `r` (resume) first.
+      if (selected.isPaused()) {
+        store.setError('Instance is paused — press r to resume before opening.');
+        return;
+      }
       // First-time attach: show the onboarding overlay; on dismiss the
       // overlay fires the actual attach. After that we go straight in.
       if ((store.model.helpSeenMask & HELP_BIT_INSTANCE_ATTACH) === 0) {
@@ -314,8 +358,132 @@ export function App(props: AppProps) {
           store.setError(errMsg(err));
         }
       })();
+      return;
+    }
+    if (seq === 'm') {
+      store.setPressedKey('m');
+      void openMergeFlow(store.model.selected, selected, false);
+      return;
+    }
+    if (seq === 'M') {
+      // Capital M = "merge & retire": after a successful merge, the
+      // worktree's job is done — kill the instance so the user doesn't
+      // have to chase down `d` afterward. Lowercase m leaves the agent
+      // running (Go-version-compatible default).
+      store.setPressedKey('M');
+      void openMergeFlow(store.model.selected, selected, true);
+      return;
     }
   });
+
+  // ===== Merge =====
+  // Runs the precheck up front so the overlay can render its outcome
+  // immediately. We never touch the host worktree here — `precheckMerge`
+  // uses `git merge-tree`, which writes only to the object DB.
+  async function openMergeFlow(index: number, inst: Instance, killAfter: boolean): Promise<void> {
+    if (!inst.branch) {
+      store.setError('instance has no branch yet — cannot merge');
+      return;
+    }
+    try {
+      // Run precheck (against branch HEAD) and dirty check in parallel —
+      // both are read-only on the underlying repos. `dirty` then lets
+      // the overlay warn the user that confirming will auto-commit
+      // pending edits before merging, instead of silently doing it.
+      const [result, dirty] = await Promise.all([
+        precheckMerge(props.repoPath, inst.branch),
+        inst.isDirty().catch(() => false),
+      ]);
+      store.openMergeOverlay({
+        index,
+        sourceBranch: inst.branch,
+        hostBranch: result.hostBranch,
+        hostPath: props.repoPath,
+        conflicts: result.conflicts,
+        blocker: result.blocker,
+        program: inst.program,
+        dirty,
+        killAfter,
+      });
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  }
+
+  async function handleMergeConfirm(): Promise<void> {
+    const preview = store.model.mergePreview;
+    if (!preview) return;
+    const inst = store.model.instances[preview.index];
+    store.closeOverlay();
+    try {
+      // Merge folds branch history into the host. Agent edits that are
+      // still uncommitted in the worktree wouldn't make it across —
+      // they'd be stranded as "dirty but unmerged" once we tell the
+      // user the merge is done. Mirror pause()'s auto-commit so what
+      // the user sees in Preview is what lands in the host branch.
+      let autoCommitted = false;
+      if (inst) {
+        autoCommitted = await inst.commitDirty(
+          `[claudesquad] auto-commit on merge of ${inst.title}`,
+        );
+      }
+      await mergeIntoHost(preview.hostPath, preview.sourceBranch);
+
+      // Capital-M flow: retire the instance now that the work is on
+      // the host branch. Lowercase-m leaves the agent running so the
+      // user can keep iterating from the same session.
+      let retired = false;
+      if (preview.killAfter && inst) {
+        try {
+          await inst.kill();
+          store.removeInstance(inst.title);
+          retired = true;
+        } catch (err) {
+          // Surface as a separate error — the merge itself succeeded,
+          // so we don't want to swallow that good outcome.
+          store.setError(`merge succeeded but cleanup failed: ${errMsg(err)}`);
+        }
+      }
+      const autoMsg = autoCommitted ? ' (with auto-commit of pending changes)' : '';
+      const tailMsg = retired
+        ? ' Instance retired.'
+        : ' Agent still running — d kill / c checkout when done.';
+      store.setInfo(`Merged ${preview.sourceBranch} → ${preview.hostBranch}${autoMsg}.${tailMsg}`);
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  }
+
+  // Conflict path → fall back to the same flow the `c` key drives: pause
+  // the instance and copy the branch name to the clipboard. The user then
+  // resolves the merge manually wherever they want.
+  async function handleMergeCheckout(): Promise<void> {
+    const preview = store.model.mergePreview;
+    if (!preview) return;
+    const inst = store.model.instances[preview.index];
+    store.closeOverlay();
+    if (!inst) return;
+    try {
+      await inst.pause();
+      store.replaceInstance(inst);
+      if (inst.branch) void writeClipboard(inst.branch).catch(() => undefined);
+    } catch (err) {
+      store.setError(errMsg(err));
+    }
+  }
+
+  // Conflict path → build a natural-language prompt for the instance's
+  // agent and stash it on the clipboard. The user pastes it into a fresh
+  // session of their agent and lets it resolve the merge.
+  async function handleCopyAgentPrompt(): Promise<void> {
+    const preview = store.model.mergePreview;
+    if (!preview) return;
+    const agent = agentLabel(preview.program);
+    const prompt = `${agent} "请把 ${preview.sourceBranch} 分支合并到 ${preview.hostBranch} 分支，如有冲突请逐文件帮我解决并解释每处取舍。"`;
+    store.closeOverlay();
+    const ok = await writeClipboard(prompt).catch(() => false);
+    if (!ok) store.setError('failed to copy prompt to clipboard');
+  }
 
   // ===== Textarea key interception =====
   // The textarea owns most keys, so we hook onKeyDown to capture the keys
@@ -510,15 +678,31 @@ export function App(props: AppProps) {
     } catch (err) {
       store.setError(errMsg(err));
     }
+    // `pause()` / `kill()` / `pushChanges()` only mutate class fields on
+    // the Instance (status, diffStats, …). Solid's createStore is blind
+    // to those, so without a rev bump downstream memos like
+    // `selectedPaused()` wouldn't re-evaluate — Preview kept the live
+    // tail, Diff kept calling git on a worktree that was just deleted
+    // and rendered the resulting "No such file or directory".
+    store.bumpRev();
     store.closeOverlay();
   }
 
   // ===== Render =====
   const selectedInstance = createMemo(() => store.model.instances[store.model.selected] ?? null);
+  // `isPaused()` reads a plain class field, so the memo also tracks `rev`
+  // — that's the channel `replaceInstance` / `checkAlive` use to announce
+  // status flips. Without the rev dep the preview/diff panes would not
+  // re-render when the user pauses (checkout) the currently-selected row.
+  const selectedPaused = createMemo(() => {
+    void store.model.rev;
+    return selectedInstance()?.isPaused() ?? false;
+  });
   const menuMode = createMemo<MenuMode>(() => {
     if (store.model.state === APP_STATE.New) return 'new';
     if (store.model.state === APP_STATE.Prompt) return 'prompt';
     if (store.model.instances.length === 0) return 'empty';
+    if (selectedPaused()) return 'paused';
     return 'default';
   });
   const inputPlaceholder = createMemo(() => {
@@ -533,18 +717,37 @@ export function App(props: AppProps) {
   // Estimated inner content dimensions of the Preview / Diff pane. Used to
   // resize the underlying tmux session so its captured rows match what the
   // viewport can actually display.
-  //   - Right column outer width  = dims.width - listWidth
-  //   - right pane chrome         = 1 left border + 1 padX-left + 1 padX-right + 1 right border = 4
-  //   - Preview inner padX        = 1 left + 1 right = 2
-  //   ⇒ content cols              = (dims.width - listWidth) - 4 - 2
-  //   - Right column outer height = dims.height - 1 (menu)
-  //   - right pane chrome         = 1 border-top + 1 border-bot = 2
-  //   - tab bar                   = 1 row
-  //   - input row (single line + prompt prefix) ≈ 1
-  //   - hint                      = 1
-  //   ⇒ content rows              = (dims.height - 1) - 2 - 1 - 1 - 1
-  const previewCols = createMemo(() => Math.max(20, dims().width - listWidth() - 6));
-  const previewRows = createMemo(() => Math.max(8, dims().height - 6));
+  //   - Right column outer width    = dims.width - listWidth
+  //   - outer column padX           = 1 + 1 = 2
+  //   - TabbedWindow border         = 1 + 1 = 2
+  //   - TabbedWindow content padX   = 1 + 1 = 2
+  //   - Preview inner padX          = 1 + 1 = 2
+  //   ⇒ content cols                = (dims.width - listWidth) - 8
+  //   - Right column outer height   = dims.height - 1 (menu)
+  //   - tab strip (labels row + ━ underline row) = 2 rows
+  //   - TabbedWindow content border = 1 + 1 = 2
+  //   ⇒ stable chrome               = 1 + 2 + 2 = 5
+  //   Footer rows are state-dependent and only added when actually rendered:
+  //     - Prompt: input 1 (Esc/↵ live in the bottom Menu now)    = 1
+  //     - New:    nothing (the inline NewInstanceRow lives in the list)
+  //     - Idle:   nothing                                        = 0
+  //   Sizing tmux to the real visible area avoids both bottom clipping
+  //   (when chrome > tmux size) and blank padding rows (when tmux <
+  //   visible area).
+  const previewCols = createMemo(() => Math.max(20, dims().width - listWidth() - 8));
+  // Each ErrorBox banner is `rounded` border (1) + 1 content row + border (1) = 3 rows.
+  // Error and info are independent fields and can stack, so we sum them.
+  const bannerRows = createMemo(() => {
+    let n = 0;
+    if (store.model.error) n += 3;
+    if (store.model.info) n += 3;
+    return n;
+  });
+  const previewRows = createMemo(() => {
+    const s = store.model.state;
+    const footer = s === APP_STATE.Prompt ? 1 : 0;
+    return Math.max(8, dims().height - 5 - footer - bannerRows());
+  });
 
   // ====== Overlay-only branch ======
   return (
@@ -557,7 +760,7 @@ export function App(props: AppProps) {
               instances={store.model.instances}
               selectedIndex={store.model.selected}
               width={listWidth()}
-              height={dims().height - 1}
+              height={dims().height - 1 - bannerRows()}
               autoYes={props.autoYes ?? props.config.auto_yes}
               rev={store.model.rev}
               newInstanceRow={
@@ -577,34 +780,30 @@ export function App(props: AppProps) {
                 ) : undefined
               }
             />
-            <box
-              flexGrow={1}
-              flexDirection="column"
-              borderStyle="rounded"
-              borderColor={colors.primary}
-              paddingLeft={1}
-              paddingRight={1}
-              gap={0}
-            >
-              <TabbedWindow active={store.model.activeTab}>
+            <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} gap={0}>
+              <TabbedWindow active={store.model.activeTab} hint="tab / shift+tab to switch">
                 <Switch>
                   <Match when={store.model.activeTab === 'preview'}>
                     <Preview
                       instance={selectedInstance()}
+                      paused={selectedPaused()}
                       width={previewCols()}
                       height={previewRows()}
                       scrollMode={store.model.scrollMode}
                       scrollOffset={store.model.scrollOffset}
                       onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
+                      onScrollLimit={(m) => store.setScrollMax(m)}
                     />
                   </Match>
                   <Match when={store.model.activeTab === 'diff'}>
                     <Diff
                       instance={selectedInstance()}
+                      paused={selectedPaused()}
                       height={previewRows()}
                       scrollMode={store.model.scrollMode}
                       scrollOffset={store.model.scrollOffset}
                       onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
+                      onScrollLimit={(m) => store.setScrollMax(m)}
                     />
                   </Match>
                 </Switch>
@@ -631,39 +830,41 @@ export function App(props: AppProps) {
                 </box>
               </Show>
 
-              {/* Input — always rendered; focused based on mode */}
-              <box flexDirection="row" flexShrink={0}>
-                <text fg="cyan" attributes={1}>
-                  {'> '}
-                </text>
-                <textarea
-                  flexGrow={1}
-                  ref={(r) => {
-                    textareaRef = r;
-                  }}
-                  placeholder={inputPlaceholder()}
-                  placeholderColor={colors.muted}
-                  focusedTextColor="white"
-                  textColor="white"
-                  // Only this bottom textarea handles the Prompt flow; the
-                  // New flow uses the inline NewInstanceRow textarea inside
-                  // the InstanceList. Keeping them both focusable would make
-                  // the cursor / IME drift between two locations.
-                  focused={store.model.state === APP_STATE.Prompt}
-                  // Override OpenTUI's default (Enter → newline, Meta+Enter →
-                  // submit). For session names + prompts a plain Enter should
-                  // submit; Shift+Enter inserts an explicit newline if needed.
-                  keyBindings={SUBMIT_ON_ENTER_BINDINGS}
-                  onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
-                  onSubmit={() => {
-                    // Defer twice so IME flushes the trailing composed character
-                    // (opencode pattern). Without this the last pinyin char can
-                    // be lost when submitting with Enter immediately.
-                    setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
-                  }}
-                  onKeyDown={onTextareaKey}
-                />
-              </box>
+              {/* Input — only rendered when in Prompt mode. The New flow
+               *  uses the inline NewInstanceRow inside the InstanceList,
+               *  and in idle there's nothing to type, so the empty
+               *  textarea + duplicated `? for shortcuts` placeholder
+               *  served no purpose (and confused the reader). */}
+              <Show when={store.model.state === APP_STATE.Prompt}>
+                <box flexDirection="row" flexShrink={0}>
+                  <text fg="cyan" attributes={1}>
+                    {'> '}
+                  </text>
+                  <textarea
+                    flexGrow={1}
+                    ref={(r) => {
+                      textareaRef = r;
+                    }}
+                    placeholder={inputPlaceholder()}
+                    placeholderColor={colors.muted}
+                    focusedTextColor="white"
+                    textColor="white"
+                    focused={true}
+                    // Override OpenTUI's default (Enter → newline, Meta+Enter →
+                    // submit). For session names + prompts a plain Enter should
+                    // submit; Shift+Enter inserts an explicit newline if needed.
+                    keyBindings={SUBMIT_ON_ENTER_BINDINGS}
+                    onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
+                    onSubmit={() => {
+                      // Defer twice so IME flushes the trailing composed character
+                      // (opencode pattern). Without this the last pinyin char can
+                      // be lost when submitting with Enter immediately.
+                      setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
+                    }}
+                    onKeyDown={onTextareaKey}
+                  />
+                </box>
+              </Show>
 
               {/* Branch picker (only when in Prompt mode) */}
               <Show when={store.model.state === APP_STATE.Prompt}>
@@ -703,9 +904,9 @@ export function App(props: AppProps) {
                 </box>
               </Show>
 
-              <text fg={colors.muted}>
-                {inputFocused() ? 'Esc to cancel · ↵ to submit' : '? for shortcuts'}
-              </text>
+              {/* All mode-specific shortcuts (Esc cancel, ↵ submit/start,
+               *  ? help) now live in the bottom Menu so we never spend a
+               *  whole row on a hint that duplicates the menu line. */}
             </box>
           </box>
           <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
@@ -714,6 +915,14 @@ export function App(props: AppProps) {
               message={store.model.error}
               width={Math.floor(dims().width * 0.9)}
               onDismiss={() => store.setError(null)}
+            />
+          </Show>
+          <Show when={store.model.info}>
+            <ErrorBox
+              message={store.model.info}
+              kind="info"
+              width={Math.floor(dims().width * 0.9)}
+              onDismiss={() => store.setInfo(null)}
             />
           </Show>
         </box>
@@ -745,6 +954,24 @@ export function App(props: AppProps) {
           justifyContent="center"
         >
           <HelpOverlay width={overlayWidth()} onClose={() => store.closeOverlay()} />
+        </box>
+      </Match>
+      <Match when={store.model.state === APP_STATE.Merge && store.model.mergePreview !== null}>
+        <box
+          width={dims().width}
+          height={dims().height}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <MergeOverlay
+            preview={store.model.mergePreview!}
+            width={overlayWidth()}
+            onConfirm={() => void handleMergeConfirm()}
+            onCheckout={() => void handleMergeCheckout()}
+            onCopyAgentPrompt={() => void handleCopyAgentPrompt()}
+            onCancel={() => store.closeOverlay()}
+          />
         </box>
       </Match>
       <Match when={store.model.pendingHelp !== null}>
