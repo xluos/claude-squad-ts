@@ -1,0 +1,60 @@
+{
+  "name": "claude-squad-ts",
+  "version": "0.1.0",
+  "description": "TypeScript rewrite of claude-squad — manage multiple Claude/Aider sessions over git worktrees + tmux. Solves CJK rendering and IME cursor-tracking issues of the Go version.",
+  "type": "module",
+  "bin": {
+    "cs": "./dist/cli/index.js",
+    "claude-squad-ts": "./dist/cli/index.js"
+  },
+  "main": "./dist/cli/index.js",
+  "scripts": {
+    "dev": "bun run src/cli/index.ts",
+    "dev:tui": "bun run src/cli/index.ts",
+    "build": "bun build src/cli/index.ts --target=bun --outdir=dist --minify --sourcemap",
+    "build:js": "bun build src/cli/index.ts --target=node --outdir=dist",
+    "start": "bun run dist/cli/index.js",
+    "check": "tsc --noEmit && biome check src",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "format": "biome format --write src",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "engines": {
+    "bun": ">=1.2",
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "1.2.0-beta.12",
+    "ansi-escapes": "^7.0.0",
+    "chalk": "^5.6.2",
+    "cli-truncate": "^4.0.0",
+    "commander": "^14.0.3",
+    "ink": "^7.0.3",
+    "react": "^19.2.6",
+    "simple-git": "^3.36.0",
+    "string-width": "^8.2.1",
+    "strip-ansi": "^7.1.2",
+    "wrap-ansi": "^10.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.0",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  },
+  "trustedDependencies": [
+    "@lydell/node-pty",
+    "@lydell/node-pty-darwin-arm64",
+    "@lydell/node-pty-darwin-x64",
+    "@lydell/node-pty-linux-x64",
+    "@lydell/node-pty-linux-arm64"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
