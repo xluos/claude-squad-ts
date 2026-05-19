@@ -1,4 +1,4 @@
-import type { TextareaRenderable } from '@opentui/core';
+import { defaultTextareaKeyBindings, type TextareaRenderable } from '@opentui/core';
 import { useKeyboard, useTerminalDimensions } from '@opentui/solid';
 import {
   createEffect,
@@ -40,6 +40,26 @@ import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
 import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
 import { createAppStore } from './state.js';
+
+/**
+ * Textarea key bindings tweaked for prompt-style usage. Replaces OpenTUI's
+ * default (Enter → newline, Meta+Enter → submit) with Enter → submit, and
+ * keeps Shift+Enter as an explicit newline. Everything else (cursor moves,
+ * word-wise edits, undo, etc.) is inherited from `defaultTextareaKeyBindings`
+ * — we only swap the Enter / kpenter / linefeed entries.
+ */
+const SUBMIT_ON_ENTER_BINDINGS = [
+  // Our overrides come first so the textarea sees them before the defaults
+  // would have matched a less-specific entry.
+  { name: 'return', shift: true, action: 'newline' as const },
+  { name: 'kpenter', shift: true, action: 'newline' as const },
+  { name: 'return', action: 'submit' as const },
+  { name: 'kpenter', action: 'submit' as const },
+  { name: 'linefeed', action: 'submit' as const },
+  ...defaultTextareaKeyBindings.filter(
+    (b) => !(b.name === 'return' || b.name === 'kpenter' || b.name === 'linefeed'),
+  ),
+];
 
 export interface AppProps {
   config: AppConfig;
@@ -575,6 +595,10 @@ export function App(props: AppProps) {
                   focusedTextColor="white"
                   textColor="white"
                   focused={inputFocused()}
+                  // Override OpenTUI's default (Enter → newline, Meta+Enter →
+                  // submit). For session names + prompts a plain Enter should
+                  // submit; Shift+Enter inserts an explicit newline if needed.
+                  keyBindings={SUBMIT_ON_ENTER_BINDINGS}
                   onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
                   onSubmit={() => {
                     // Defer twice so IME flushes the trailing composed character
