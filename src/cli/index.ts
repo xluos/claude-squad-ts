@@ -1,15 +1,50 @@
 #!/usr/bin/env bun
-import { Command } from 'commander';
-import { runDaemon, stopDaemon } from '../daemon/daemon.js';
-import { APP_NAME, APP_VERSION } from '../shared/constants.js';
-import { initLogger, log } from '../shared/logger.js';
-import { ensureAppDir } from '../shared/paths.js';
-import { runDebug } from './commands/debug.js';
-import { runReset } from './commands/reset.js';
-import { runVersion } from './commands/version.js';
-import { runTui } from './tui.js';
 
-async function main(): Promise<number> {
+// IMPORTANT — read before reordering imports.
+//
+// OpenTUI's Solid JSX is transformed at *load time* by a Bun plugin
+// (babel-preset-solid). The plugin has to be registered before any .tsx
+// file is parsed, otherwise Bun's built-in JSX transform fires first and
+// the file ends up with an `import "react/jsx-dev-runtime"` that we don't
+// have.
+//
+// ESM resolves the entire static module graph before evaluating any code,
+// so a static `import "@opentui/solid/preload"` at the top of *this* file
+// is too late — Bun already parsed App.tsx by then.
+//
+// We work around this by importing the plugin synchronously (which is .ts,
+// no JSX, so it's safe) and only then *dynamically* importing the rest of
+// the CLI. The dynamic import resolves its module graph at runtime, after
+// the plugin is registered.
+import { ensureSolidTransformPlugin } from '@opentui/solid/bun-plugin';
+
+ensureSolidTransformPlugin();
+
+await runMain();
+
+async function runMain(): Promise<void> {
+  const [
+    { Command },
+    { runDaemon, stopDaemon },
+    { APP_NAME, APP_VERSION },
+    { initLogger, log },
+    { ensureAppDir },
+    { runDebug },
+    { runReset },
+    { runVersion },
+    { runTui },
+  ] = await Promise.all([
+    import('commander'),
+    import('../daemon/daemon.js'),
+    import('../shared/constants.js'),
+    import('../shared/logger.js'),
+    import('../shared/paths.js'),
+    import('./commands/debug.js'),
+    import('./commands/reset.js'),
+    import('./commands/version.js'),
+    import('./tui.js'),
+  ]);
+
   await ensureAppDir();
   await initLogger({ daemon: process.argv.includes('daemon') });
 
@@ -81,13 +116,9 @@ async function main(): Promise<number> {
     });
 
   await program.parseAsync(process.argv);
-  const code = process.exitCode;
-  return typeof code === 'number' ? code : 0;
-}
 
-function formatErr(err: unknown): string {
-  if (err instanceof Error) return `${APP_NAME}: ${err.message}`;
-  return `${APP_NAME}: ${String(err)}`;
+  function formatErr(err: unknown): string {
+    if (err instanceof Error) return `${APP_NAME}: ${err.message}`;
+    return `${APP_NAME}: ${String(err)}`;
+  }
 }
-
-void main();

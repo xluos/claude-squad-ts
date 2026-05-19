@@ -37,10 +37,10 @@ export function InstanceList(props: InstanceListProps) {
         <Show
           when={props.instances.length > 0}
           fallback={
-            <box paddingTop={1}>
-              <text fg={colors.muted}>
-                No instances. Press <text fg="cyan">n</text> to create.
-              </text>
+            <box paddingTop={1} flexDirection="row">
+              <text fg={colors.muted}>No instances. Press </text>
+              <text fg="cyan">n</text>
+              <text fg={colors.muted}> to create.</text>
             </box>
           }
         >
@@ -66,20 +66,23 @@ function Row(props: RowProps) {
   const branch = () => props.instance.branch || '(pending)';
   const stats = () => props.instance.diffStats;
 
-  const titleAttr = () => (props.selected ? 1 : 0); // bold when selected
   const bg = () => (props.selected ? colors.selectedBg : undefined);
 
   return (
     <box flexDirection="column" backgroundColor={bg()}>
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
-        <text bg={bg()}>
+        <box flexDirection="row" backgroundColor={bg()}>
           <text fg={colors.muted} bg={bg()}>
             {`${props.index}. `}
           </text>
-          <text fg={props.selected ? colors.accent : 'white'} attributes={titleAttr()} bg={bg()}>
+          <text
+            fg={props.selected ? colors.accent : 'white'}
+            attributes={props.selected ? 1 : 0}
+            bg={bg()}
+          >
             {displayName()}
           </text>
-        </text>
+        </box>
         <text fg={iconColorFor(props.instance.status)} bg={bg()}>
           {iconFor(props.instance.status)}
         </text>
@@ -89,13 +92,13 @@ function Row(props: RowProps) {
           {`   λ-${branch()}`}
         </text>
         <Show when={stats().added > 0 || stats().removed > 0}>
-          <text bg={bg()}>
+          <box flexDirection="row" backgroundColor={bg()}>
             <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
             <text fg={colors.muted} bg={bg()}>
               ,
             </text>
             <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
-          </text>
+          </box>
         </Show>
       </box>
     </box>

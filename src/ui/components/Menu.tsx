@@ -18,7 +18,6 @@ export interface MenuProps {
 export function Menu(props: MenuProps) {
   const [highlight, setHighlight] = createSignal<string | null>(null);
 
-  // Whenever pressedKey changes, briefly highlight that binding then clear.
   createEffect(
     on(
       () => props.pressedKey,
@@ -45,15 +44,20 @@ export function Menu(props: MenuProps) {
   return (
     <box paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="center" gap={2}>
       <For each={bindings()}>
-        {(b, i) => (
-          <box flexDirection="row">
-            {i() > 0 && <text fg={colors.muted}>· </text>}
-            <text fg={highlight() === b.key ? colors.accent : colors.primary} attributes={1}>
-              {b.label}
-            </text>
-            <text fg={highlight() === b.key ? colors.accent : 'white'}> {b.desc}</text>
-          </box>
-        )}
+        {(b, i) => {
+          const active = () => highlight() === b.key;
+          const keyColor = () => (active() ? colors.accent : colors.primary);
+          const descColor = () => (active() ? colors.accent : 'white');
+          return (
+            <box flexDirection="row">
+              {i() > 0 ? <text fg={colors.muted}>· </text> : null}
+              <text fg={keyColor()} attributes={1}>
+                {b.label}
+              </text>
+              <text fg={descColor()}> {b.desc}</text>
+            </box>
+          );
+        }}
       </For>
     </box>
   );

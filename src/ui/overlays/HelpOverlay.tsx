@@ -21,7 +21,6 @@ export function HelpOverlay(props: HelpOverlayProps) {
       paddingTop={1}
       paddingBottom={1}
       width={props.width}
-      gap={0}
     >
       <text fg={colors.primary} attributes={1}>
         Help — press any key to close
