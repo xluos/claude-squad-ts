@@ -32,6 +32,15 @@ export function defaultConfig(): AppConfig {
     auto_yes: false,
     daemon_poll_interval: DEFAULT_DAEMON_POLL_MS,
     branch_prefix: defaultBranchPrefix(),
+    llm: {
+      enabled: false,
+      api_key: '',
+      model: '',
+      base_url: '',
+      timeout: 30,
+      stream: false,
+      enable_thinking: false,
+    },
   };
 }
 

@@ -219,21 +219,32 @@ export function MultilineInput(props: MultilineInputProps): React.ReactElement {
 
   const showPlaceholder = internal.length === 0 && placeholder;
 
+  // Always render exactly `rows` lines so the box keeps a stable height
+  // regardless of how much text is typed. Cells beyond the current line
+  // are filled with a single space so Ink doesn't collapse the <Text>.
+  const lines: string[] = Array.from({ length: rows }, (_, i) => {
+    if (showPlaceholder && i === 0) return '';
+    const row = visibleRows[i] ?? '';
+    return row.length > 0 ? row : ' ';
+  });
+
   const content = (
-    <Box flexDirection="column" width={width + (bordered ? 0 : 0)}>
+    <Box flexDirection="column" width={width} height={rows}>
       {showPlaceholder ? (
-        <Text color="gray">{placeholder}</Text>
+        <>
+          <Text color="gray">{placeholder}</Text>
+          {Array.from({ length: rows - 1 }, (_, i) => (
+            <Text key={`pad-${i}`}> </Text>
+          ))}
+        </>
       ) : (
-        Array.from({ length: rows }, (_, i) => {
-          const row = visibleRows[i] ?? '';
-          return <Text key={i}>{row.length > 0 ? row : ' '}</Text>;
-        })
+        lines.map((line, i) => <Text key={i}>{line}</Text>)
       )}
     </Box>
   );
 
   return bordered ? (
-    <Box borderStyle="round" borderColor="gray" paddingX={1}>
+    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
       {content}
     </Box>
   ) : (

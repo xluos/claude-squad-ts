@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { log } from '../shared/logger.js';
-import { type DiffStats, type InstanceData, Status } from '../shared/types.js';
+import { type DiffStats, type InstanceData, type LLMConfig, Status } from '../shared/types.js';
 import { hasInitialCommit, isGitRepo } from './git/util.js';
 import {
   createWorktree,
@@ -9,10 +9,16 @@ import {
   type Worktree,
   worktreeFromData,
 } from './git/worktree.js';
+import { hasNonAscii, translateToEnglishId } from './llm/translator.js';
 import { detectTrustPrompt, StatusMonitor } from './tmux/monitor.js';
 import { TmuxSession } from './tmux/tmux.js';
 
 export interface NewInstanceOpts {
+  /**
+   * User-supplied name. May contain CJK / non-ASCII. The constructor will
+   * derive an ASCII-safe `title` from it (via LLM when configured) and keep
+   * the original as `displayName`.
+   */
   title: string;
   path: string;
   program: string;
@@ -24,10 +30,14 @@ export interface NewInstanceOpts {
   prompt?: string;
   width?: number;
   height?: number;
+  /** LLM config for CJK → ASCII translation; pass undefined to disable. */
+  llm?: LLMConfig;
 }
 
 export class Instance {
   title: string;
+  /** User-facing name; may contain CJK. Defaults to title for pure-ASCII input. */
+  displayName: string;
   path: string;
   branch: string;
   status: Status;
@@ -49,6 +59,7 @@ export class Instance {
 
   constructor(init: {
     title: string;
+    displayName?: string;
     path: string;
     program: string;
     branchPrefix: string;
@@ -65,6 +76,7 @@ export class Instance {
     branchName?: string;
   }) {
     this.title = init.title;
+    this.displayName = init.displayName ?? init.title;
     this.path = init.path;
     this.program = init.program;
     this.branchPrefix = init.branchPrefix;
@@ -81,6 +93,12 @@ export class Instance {
     if (init.worktree) this.worktree = init.worktree;
   }
 
+  /**
+   * Create a new Instance from user input. If the title contains non-ASCII
+   * characters, the LLM (when configured) translates it to a kebab-case
+   * English ID; otherwise we fall back to `session-<unixtime>`. In either
+   * case the original input is preserved as `displayName`.
+   */
   static async create(opts: NewInstanceOpts): Promise<Instance> {
     if (!(await isGitRepo(opts.path))) {
       throw new Error(`${opts.path} is not a git repository`);
@@ -90,8 +108,23 @@ export class Instance {
         'this appears to be a brand new repository: please create an initial commit before creating an instance',
       );
     }
+
+    const userInput = opts.title.trim();
+    let title = userInput;
+    const displayName = userInput;
+    if (hasNonAscii(userInput)) {
+      try {
+        title = await translateToEnglishId(userInput, opts.llm);
+      } catch (err) {
+        log.warn('LLM translation threw', err);
+        title = `session-${Math.floor(Date.now() / 1000)}`;
+      }
+      log.info(`translated session name "${userInput}" -> "${title}"`);
+    }
+
     return new Instance({
-      title: opts.title,
+      title,
+      displayName,
       path: opts.path,
       program: opts.program,
       branchPrefix: opts.branchPrefix,
@@ -106,6 +139,8 @@ export class Instance {
   static fromPersisted(data: InstanceData, branchPrefix: string): Instance {
     const inst = new Instance({
       title: data.title,
+      // Backward compat: pre-dual-naming data has no display_name → use title.
+      displayName: data.display_name || data.title,
       path: data.path,
       program: data.program,
       branchPrefix,
@@ -305,6 +340,7 @@ export class Instance {
     if (!this.worktree) throw new Error('cannot persist unstarted instance');
     return {
       title: this.title,
+      display_name: this.displayName,
       path: this.path,
       branch: this.branch,
       status: this.status,

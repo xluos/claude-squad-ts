@@ -37,6 +37,12 @@ export interface WorktreeData {
 
 export interface InstanceData {
   title: string;
+  /**
+   * User-facing display name; can contain CJK / non-ASCII characters.
+   * Title remains an ASCII-safe identifier used for tmux session + git branch.
+   * For backwards compatibility, when missing we fall back to title at load time.
+   */
+  display_name?: string;
   path: string;
   branch: string;
   status: Status;
@@ -69,10 +75,28 @@ export interface Profile {
   program: string;
 }
 
+export interface LLMConfig {
+  /** API key for the LLM service. */
+  api_key?: string;
+  /** Model name. */
+  model?: string;
+  /** Base URL of an OpenAI-compatible /chat/completions endpoint. */
+  base_url?: string;
+  /** Master switch. When false, translation is skipped entirely. */
+  enabled: boolean;
+  /** Request timeout in seconds. Defaults to 30. */
+  timeout?: number;
+  /** Whether to ask the API for streaming responses. Default false. */
+  stream?: boolean;
+  /** Some Chinese vendors use this flag to disable internal CoT scaffolding. */
+  enable_thinking?: boolean;
+}
+
 export interface AppConfig {
   default_program: string;
   auto_yes: boolean;
   daemon_poll_interval: number;
   branch_prefix: string;
   profiles?: Profile[];
+  llm?: LLMConfig;
 }

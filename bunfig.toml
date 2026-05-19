@@ -1,0 +1,3 @@
+[test]
+# Scope test discovery so node_modules tests don't get picked up.
+root = "test"

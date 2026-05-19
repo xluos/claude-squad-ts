@@ -206,22 +206,26 @@ export function App({
 
   const submitNewName = useCallback(
     async (name: string): Promise<void> => {
-      const title = name.trim();
-      if (!title) {
+      const input = name.trim();
+      if (!input) {
         dispatch({ type: 'error', message: 'name required' });
         return;
       }
-      if (model.instances.some((i) => i.title === title)) {
-        dispatch({ type: 'error', message: `instance "${title}" already exists` });
+      // Dedupe on the user-visible name (displayName). Title gets auto-derived
+      // from input via Instance.create; collisions there are still possible
+      // but extremely rare and surface as worktree/tmux errors at Start.
+      if (model.instances.some((i) => i.displayName === input)) {
+        dispatch({ type: 'error', message: `instance "${input}" already exists` });
         return;
       }
       try {
         const inst = await Instance.create({
-          title,
+          title: input,
           path: repoPath,
           program: defaultProgram,
           branchPrefix: config.branch_prefix,
           autoYes: autoYes ?? config.auto_yes,
+          llm: config.llm,
         });
         await inst.start(true);
         dispatch({ type: 'add-instance', instance: inst });
@@ -252,6 +256,7 @@ export function App({
           autoYes: autoYes ?? config.auto_yes,
           branch: model.selectedBranch || undefined,
           prompt: text,
+          llm: config.llm,
         });
         await inst.start(true);
         dispatch({ type: 'add-instance', instance: inst });
@@ -302,6 +307,38 @@ export function App({
 
   const selectedInstance = model.instances[model.selected] ?? null;
   const menuMode: MenuMode = menuModeFor(model);
+  const modalOpen = model.state !== APP_STATE.Default;
+
+  // When a modal is open, the whole frame is replaced by the centered modal.
+  // Ink has no absolute positioning; this is the cleanest way to ensure the
+  // modal sits in the middle of the terminal rather than stacking below
+  // the main panes (the bug we were seeing before).
+  if (modalOpen) {
+    return (
+      <Box
+        width={size.columns}
+        height={size.rows}
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <ModalLayer
+          model={model}
+          size={size}
+          profiles={profiles}
+          onNewName={submitNewName}
+          onPrompt={submitPrompt}
+          onConfirm={handleConfirm}
+          onClose={() => dispatch({ type: 'close-overlay' })}
+          onBranchFilter={(filter) =>
+            dispatch({ type: 'set-branches', filter, results: model.branchResults })
+          }
+          onBranchSelect={(name) => dispatch({ type: 'select-branch', name })}
+          onProfileSelect={(name) => dispatch({ type: 'select-profile', name })}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width={size.columns} height={size.rows}>
@@ -330,20 +367,6 @@ export function App({
           onDismiss={() => dispatch({ type: 'error', message: null })}
         />
       )}
-      <ModalLayer
-        model={model}
-        size={size}
-        profiles={profiles}
-        onNewName={submitNewName}
-        onPrompt={submitPrompt}
-        onConfirm={handleConfirm}
-        onClose={() => dispatch({ type: 'close-overlay' })}
-        onBranchFilter={(filter) =>
-          dispatch({ type: 'set-branches', filter, results: model.branchResults })
-        }
-        onBranchSelect={(name) => dispatch({ type: 'select-branch', name })}
-        onProfileSelect={(name) => dispatch({ type: 'select-profile', name })}
-      />
     </Box>
   );
 }
@@ -409,11 +432,12 @@ function ModalLayer({
   if (model.state === APP_STATE.Confirm) {
     const action = model.confirmAction;
     const inst = action ? model.instances[action.index] : null;
+    const name = inst?.displayName || inst?.title;
     const msg = action
       ? action.kind === 'kill'
-        ? `Delete instance "${inst?.title}" and its worktree?`
+        ? `Delete instance "${name}" and its worktree?`
         : action.kind === 'pause'
-          ? `Pause "${inst?.title}"? Worktree will be removed but branch kept.`
+          ? `Pause "${name}"? Worktree will be removed but branch kept.`
           : `Push branch "${inst?.branch}" to origin and open in browser?`
       : '';
     return (

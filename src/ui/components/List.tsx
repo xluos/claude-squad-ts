@@ -50,6 +50,7 @@ interface RowProps {
 }
 
 function Row({ instance, selected }: RowProps): React.ReactElement {
+  const displayName = instance.displayName || instance.title;
   const icon = iconFor(instance.status);
   const iconColor = iconColorFor(instance.status);
   return (
@@ -60,7 +61,7 @@ function Row({ instance, selected }: RowProps): React.ReactElement {
         </Text>
         <Text bold color={selected ? colors.accent : 'white'}>
           {' '}
-          {instance.title}
+          {displayName}
         </Text>
         <Text color="gray"> ({statusLabel(instance.status)})</Text>
       </Box>
