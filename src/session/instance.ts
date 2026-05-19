@@ -155,6 +155,13 @@ export class Instance {
       diffStats: data.diff_stats ?? { added: 0, removed: 0 },
       worktree: worktreeFromData(data.worktree),
     });
+    // A persisted instance has, by definition, passed through start()
+    // at least once — otherwise it wouldn't be in state.json. Without
+    // this flip, paused instances (which skip the post-load start()
+    // call) would still report `started=false` and the next call to
+    // `saveInstances` would drop them via its hasStarted filter,
+    // silently wiping every paused row from state.json.
+    inst.started = true;
     return inst;
   }
 
