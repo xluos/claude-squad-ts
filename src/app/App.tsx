@@ -34,6 +34,7 @@ import { Diff } from '../ui/components/Diff.js';
 import { ErrorBox } from '../ui/components/ErrorBox.js';
 import { InstanceList } from '../ui/components/List.js';
 import { Menu, type MenuMode } from '../ui/components/Menu.js';
+import { NewInstanceRow } from '../ui/components/NewInstanceRow.js';
 import { Preview } from '../ui/components/Preview.js';
 import { TabbedWindow } from '../ui/components/TabbedWindow.js';
 import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
@@ -78,7 +79,16 @@ export function App(props: AppProps) {
   const defaultProgram = createMemo(() => props.programOverride ?? effectiveProgram(props.config));
 
   // Textarea state
+  // Two textarea instances live in the tree:
+  //   - `nameTextareaRef`: the inline one in the instance list, used when
+  //     the user is naming a brand-new session (state === New).
+  //   - `textareaRef`: the wide one at the bottom of the right pane, used
+  //     for the prompt-mode flow (state === Prompt) where the user types
+  //     a longer message and picks a branch / profile.
+  // Only one is focused at a time, matching `inputFocused()` and the
+  // current store.model.state.
   let textareaRef: TextareaRenderable | undefined;
+  let nameTextareaRef: TextareaRenderable | undefined;
   const [inputValue, setInputValue] = createSignal('');
 
   // ===== Persistence: restore + save =====
@@ -193,7 +203,9 @@ export function App(props: AppProps) {
       store.setPressedKey('n');
       setInputValue('');
       store.openNewName();
-      queueMicrotask(() => textareaRef?.focus());
+      // Focus the inline list-row textarea (rendered as the placeholder for
+      // the not-yet-created session) — not the prompt-pane textarea.
+      queueMicrotask(() => nameTextareaRef?.focus());
       return;
     }
     if (seq === 'N') {
@@ -324,6 +336,8 @@ export function App(props: AppProps) {
 
   function cancelInput(): void {
     setInputValue('');
+    nameTextareaRef?.setText('');
+    nameTextareaRef?.blur();
     textareaRef?.blur();
     store.closeOverlay();
   }
@@ -333,10 +347,11 @@ export function App(props: AppProps) {
     // Mirror opencode: re-read the textarea's native plainText right before
     // reading, so a still-composing IME character that hasn't reached the
     // onContentChange handler yet is captured.
-    const text = textareaRef?.plainText ?? inputValue();
     if (store.model.state === APP_STATE.New) {
+      const text = nameTextareaRef?.plainText ?? inputValue();
       await submitNewName(text);
     } else if (store.model.state === APP_STATE.Prompt) {
+      const text = textareaRef?.plainText ?? inputValue();
       await submitPrompt(text);
     }
   }
@@ -363,8 +378,8 @@ export function App(props: AppProps) {
       await inst.start(true);
       store.addInstance(inst);
       setInputValue('');
-      textareaRef?.setText('');
-      textareaRef?.blur();
+      nameTextareaRef?.setText('');
+      nameTextareaRef?.blur();
       store.closeOverlay();
       maybeShowInstanceStartOnboarding(inst);
     } catch (err) {
@@ -530,6 +545,22 @@ export function App(props: AppProps) {
               height={dims().height - 1}
               autoYes={props.autoYes ?? props.config.auto_yes}
               rev={store.model.rev}
+              newInstanceRow={
+                store.model.state === APP_STATE.New ? (
+                  <NewInstanceRow
+                    index={store.model.instances.length + 1}
+                    placeholder="name… (中文也可)"
+                    textareaRef={(r) => {
+                      nameTextareaRef = r;
+                    }}
+                    onContentChange={() => setInputValue(nameTextareaRef?.plainText ?? '')}
+                    onSubmit={() => {
+                      setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
+                    }}
+                    onKeyDown={onTextareaKey}
+                  />
+                ) : undefined
+              }
             />
             <box
               flexGrow={1}
@@ -599,7 +630,11 @@ export function App(props: AppProps) {
                   placeholderColor={colors.muted}
                   focusedTextColor="white"
                   textColor="white"
-                  focused={inputFocused()}
+                  // Only this bottom textarea handles the Prompt flow; the
+                  // New flow uses the inline NewInstanceRow textarea inside
+                  // the InstanceList. Keeping them both focusable would make
+                  // the cursor / IME drift between two locations.
+                  focused={store.model.state === APP_STATE.Prompt}
                   // Override OpenTUI's default (Enter → newline, Meta+Enter →
                   // submit). For session names + prompts a plain Enter should
                   // submit; Shift+Enter inserts an explicit newline if needed.

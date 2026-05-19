@@ -1,3 +1,4 @@
+import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { colors, icons } from '../../shared/styles.js';
@@ -12,6 +13,10 @@ export interface InstanceListProps {
   /** Mutation revision counter; pass through so Rows re-evaluate when an
    *  instance's internal class state changes (status, diff stats, ...). */
   rev: number;
+  /** Optional inline placeholder rendered after the last persisted row,
+   *  used by the "new session" flow so the user types the name where the
+   *  row will actually live. */
+  newInstanceRow?: JSX.Element;
 }
 
 export function InstanceList(props: InstanceListProps) {
@@ -69,6 +74,9 @@ export function InstanceList(props: InstanceListProps) {
             )}
           </For>
         </Show>
+        {/* New-instance placeholder, rendered after persisted rows so the
+            input visually lives where the row will be. */}
+        <Show when={props.newInstanceRow}>{props.newInstanceRow}</Show>
       </box>
     </box>
   );
