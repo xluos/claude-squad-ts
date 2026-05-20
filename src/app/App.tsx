@@ -22,6 +22,12 @@ import {
 import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
+import {
+  killTmuxSession,
+  listLiveTmuxSessionInfos,
+  type TmuxSessionInfo,
+  tmuxNameOf,
+} from '../session/tmux/tmux.js';
 import { writeClipboard } from '../shared/clipboard.js';
 import { effectiveProgram, getProfiles } from '../shared/config.js';
 import {
@@ -50,6 +56,7 @@ import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
 import { agentLabel, MergeOverlay } from '../ui/overlays/MergeOverlay.js';
 import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
 import { SendPromptOverlay } from '../ui/overlays/SendPromptOverlay.js';
+import { TmuxManagerOverlay, type TmuxPanelEntry } from '../ui/overlays/TmuxManagerOverlay.js';
 import { createAppStore } from './state.js';
 
 /**
@@ -116,6 +123,46 @@ export function App(props: AppProps) {
   // saves with a `restored` flag that flips to true only after the load
   // path has finished writing the real list into the store.
   const [restored, setRestored] = createSignal(false);
+  // Footer indicator + tmux manager overlay data source. Refreshed alongside
+  // the metadata tick so we don't shell out more often than necessary. The
+  // overlay also forces a refresh on open and after any kill so the view
+  // reflects the result of the user's action immediately rather than after
+  // the next tick.
+  const [tmuxInfos, setTmuxInfos] = createSignal<TmuxSessionInfo[]>([]);
+
+  // Idempotent — safe to call from the metadata tick, from the overlay's
+  // own refresh handler, and right after a kill. Silently swallows tmux
+  // errors so the periodic tick never noisy-toasts.
+  async function refreshTmuxInfos(): Promise<void> {
+    try {
+      const infos = await listLiveTmuxSessionInfos();
+      setTmuxInfos(infos);
+    } catch {
+      // tmux missing / errored — leave the previous reading alone.
+    }
+  }
+
+  // Bridges tmux's view of the world to the Instance list to mark each
+  // session tracked / orphan. Reading `store.model.rev` keeps the memo
+  // subscribed to the same change pulse as the rest of the UI (paused
+  // toggles, restored sessions, etc.).
+  const tmuxPanelEntries = createMemo<TmuxPanelEntry[]>(() => {
+    void store.model.rev;
+    const trackedByName = new Map<string, string>();
+    for (const inst of store.model.instances) {
+      if (inst.hasStarted() && !inst.isPaused()) {
+        trackedByName.set(tmuxNameOf(inst.title), inst.displayName ?? inst.title);
+      }
+    }
+    return tmuxInfos().map((info) => ({
+      ...info,
+      trackedTitle: trackedByName.get(info.name) ?? null,
+    }));
+  });
+  const tmuxLiveCount = createMemo(() => tmuxPanelEntries().length);
+  const tmuxOrphanCount = createMemo(
+    () => tmuxPanelEntries().filter((e) => e.trackedTitle === null).length,
+  );
   onMount(async () => {
     try {
       const persisted = await loadGlobalState();
@@ -204,6 +251,7 @@ export function App(props: AppProps) {
           }
         }
         if (dirty) store.bumpRev();
+        await refreshTmuxInfos();
       })();
     }, METADATA_TICK_MS);
     onCleanup(() => clearInterval(id));
@@ -240,7 +288,8 @@ export function App(props: AppProps) {
     () =>
       store.model.state === APP_STATE.Confirm ||
       store.model.state === APP_STATE.Help ||
-      store.model.state === APP_STATE.Merge,
+      store.model.state === APP_STATE.Merge ||
+      store.model.state === APP_STATE.Tmux,
   );
 
   useKeyboard((e) => {
@@ -306,6 +355,15 @@ export function App(props: AppProps) {
     }
     if (seq === '?') {
       store.openHelp();
+      return;
+    }
+    if (seq === 'T') {
+      store.setPressedKey('T');
+      store.openTmux();
+      // Pull a fresh snapshot the moment the panel opens; otherwise the
+      // user sees the last tick's view (could be up to METADATA_TICK_MS
+      // stale) until the next refresh fires.
+      void refreshTmuxInfos();
       return;
     }
     if (name === 'escape' && store.model.scrollMode) {
@@ -1156,6 +1214,21 @@ export function App(props: AppProps) {
       </box>
       <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
 
+      {/* ===== tmux live-session indicator (footer right). =====
+       *  Sits absolute so it never pushes the centered Menu off-axis. Shows
+       *  the count of *our* tmux sessions (`claudesquad_*`) tmux currently
+       *  reports alive — and, when non-zero, how many of them have no
+       *  corresponding non-paused Instance (orphans the user likely forgot
+       *  to kill). Orphan presence flips the colour to `warning` so it
+       *  actually catches the eye. */}
+      <box position="absolute" bottom={0} right={1} flexDirection="row" zIndex={4}>
+        <text fg={tmuxOrphanCount() > 0 ? colors.warning : colors.muted}>
+          {`tmux ${tmuxLiveCount()}${
+            tmuxOrphanCount() > 0 ? ` (+${tmuxOrphanCount()} orphan)` : ''
+          }`}
+        </text>
+      </box>
+
       {/* ===== Toast banners — float near the top, auto-dismiss. =====
        *  Horizontally centered, just below the header row so it lands in
        *  the user's eye-line without covering the bottom Menu or the
@@ -1225,6 +1298,47 @@ export function App(props: AppProps) {
           zIndex={10}
         >
           <HelpOverlay width={helpOverlayWidth()} onClose={() => store.closeOverlay()} />
+        </box>
+      </Show>
+      <Show when={store.model.state === APP_STATE.Tmux}>
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={dims().width}
+          height={dims().height}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          zIndex={10}
+        >
+          <TmuxManagerOverlay
+            entries={tmuxPanelEntries()}
+            width={helpOverlayWidth()}
+            onClose={() => store.closeOverlay()}
+            onRefresh={() => void refreshTmuxInfos()}
+            onKill={async (name) => {
+              const ok = await killTmuxSession(name);
+              if (ok) {
+                store.setInfo(t((m) => m.toast.tmuxKilled)(name));
+              } else {
+                store.setError(t((m) => m.toast.tmuxKillFailed)(name));
+              }
+              await refreshTmuxInfos();
+            }}
+            onKillOrphans={async () => {
+              const orphans = tmuxPanelEntries().filter((e) => e.trackedTitle === null);
+              let killed = 0;
+              for (const o of orphans) {
+                // Sequential, not parallel: tmux's command socket
+                // serialises anyway and a tight for-loop keeps the
+                // toast count honest even if one kill happens to fail.
+                if (await killTmuxSession(o.name)) killed++;
+              }
+              store.setInfo(t((m) => m.toast.tmuxKilledOrphans)(killed));
+              await refreshTmuxInfos();
+            }}
+          />
         </box>
       </Show>
       <Show when={store.model.state === APP_STATE.Merge && store.model.mergePreview !== null}>

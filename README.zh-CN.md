@@ -37,6 +37,7 @@
 - **per-instance 基准分支 chip** —— Diff tab 上 "based on …" 标签按 instance 创建时锚定，不再随 host 当前分支漂（host `git checkout` 切走后也不会骗人）
 - **每仓库状态 + worktree 隔离** —— 在不同目录打开 claude-squad 不再共享会话列表，每个 repo 独立的 `projects/<id>/state.json` 和 worktree 池。老 `~/.claude-squad/state.json` 首次启动自动迁移
 - **合并时自动 commit dirty 改动** —— 如果合并时工作树有未提交改动，overlay 会提示，并自动先 commit 到源分支再合并（跟原本暂停时的自动 commit 行为对齐）
+- **`T` = tmux 管理面板** —— 浮窗列出所有 tmux 当前在跑的 `claudesquad_*` 会话，每行标注 tracked / orphan / attached、前台命令、时长。`d` 删除选中，`a` 一键清理所有 orphan。底部常驻 `tmux N (+M orphan)` 指示器，orphan 累积时变黄，被遗忘的会话不再藏起来
 - **帮助 overlay 跟真实快捷键对齐** —— `HelpOverlay.tsx` 是唯一来源，老的 `HELP_BINDINGS` 死代码已清理
 
 ## 安装
@@ -92,14 +93,17 @@ cs reset            # 清空**当前项目**保存的实例
 | `K` / `J`            | 上移 / 下移选中的会话                                             |
 | `↵` / `o`            | 接入选中的会话                                                    |
 | `Ctrl+Q`             | 从已接入的会话退出（或者 `tmux prefix + d`）                      |
+| `i`                  | 不接入会话、直接向运行中的会话发送一段提示词                      |
 | `s`                  | 提交并把分支推到 GitHub                                           |
 | `c`                  | 切出：提交改动、暂停会话、复制分支名到剪贴板                      |
-| `r`                  | 恢复已暂停的会话                                                  |
+| `r`                  | 恢复已暂停的会话（错误状态下则用于重启 tmux）                     |
 | `m`                  | 合并工作树分支到主分支（代理继续跑）                              |
 | `M`                  | 合并并关闭实例 —— 合并完清理 tmux / worktree / branch             |
+| `a`                  | Apply —— 把分支 squash 成单个 commit 合入主分支，再关闭实例       |
 | `u`                  | 从基准分支同步下来 —— 把 host 的新提交拉进当前 worktree           |
 | `tab`                | 在 Preview 和 Diff 之间切换                                       |
 | `shift+↑` / `shift+↓`| 滚动 preview / diff（Esc 退出滚动模式）                           |
+| `T`                  | 打开 tmux 管理面板 —— 查看 / 删除我们启动的活跃 tmux 会话         |
 | `?`                  | 完整帮助                                                          |
 | `q` / `Ctrl+C`       | 退出                                                              |
 

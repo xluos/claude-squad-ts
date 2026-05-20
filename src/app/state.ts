@@ -257,6 +257,9 @@ export function createAppStore() {
     openHelp() {
       setModel('state', APP_STATE.Help);
     },
+    openTmux() {
+      setModel('state', APP_STATE.Tmux);
+    },
     openMergeOverlay(preview: MergePreview) {
       setModel(
         produce((m) => {

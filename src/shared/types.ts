@@ -122,6 +122,7 @@ export const APP_STATE = {
   Confirm: 4,
   Merge: 5,
   Send: 6,
+  Tmux: 7,
 } as const;
 export type AppStateValue = (typeof APP_STATE)[keyof typeof APP_STATE];
 

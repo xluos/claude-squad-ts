@@ -22,6 +22,7 @@ export const KeyName = {
   Help: '?',
   Quit: 'q',
   Cancel: 'esc',
+  Tmux: 'T',
 } as const;
 export type KeyName = (typeof KeyName)[keyof typeof KeyName];
 
@@ -52,6 +53,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { key: KeyName.Merge, label: 'm', desc: () => t((m) => m.menu.merge), group: 2 },
   { key: KeyName.Apply, label: 'a', desc: () => t((m) => m.menu.apply), group: 2 },
   { key: KeyName.Sync, label: 'u', desc: () => t((m) => m.menu.sync), group: 2 },
+  { key: KeyName.Tmux, label: 'T', desc: () => t((m) => m.menu.tmux), group: 3 },
   { key: KeyName.Help, label: '?', desc: () => t((m) => m.menu.help), group: 3 },
   { key: KeyName.Quit, label: 'q', desc: () => t((m) => m.menu.quit), group: 3 },
 ];
@@ -67,6 +69,7 @@ export const PAUSED_BINDINGS: KeyBinding[] = [
   { key: KeyName.Resume, label: 'r', desc: () => t((m) => m.menu.resume), group: 1 },
   { key: KeyName.Submit, label: 's', desc: () => t((m) => m.menu.submitPR), group: 2 },
   { key: KeyName.Merge, label: 'm', desc: () => t((m) => m.menu.merge), group: 2 },
+  { key: KeyName.Tmux, label: 'T', desc: () => t((m) => m.menu.tmux), group: 3 },
   { key: KeyName.Help, label: '?', desc: () => t((m) => m.menu.help), group: 3 },
   { key: KeyName.Quit, label: 'q', desc: () => t((m) => m.menu.quit), group: 3 },
 ];
@@ -77,6 +80,7 @@ export const PAUSED_BINDINGS: KeyBinding[] = [
 // repeats `n / N / ?` inline, so this stays minimal.
 export const EMPTY_BINDINGS: KeyBinding[] = [
   { key: KeyName.New, label: 'n', desc: () => t((m) => m.menu.new), group: 1 },
+  { key: KeyName.Tmux, label: 'T', desc: () => t((m) => m.menu.tmux), group: 3 },
   { key: KeyName.Help, label: '?', desc: () => t((m) => m.menu.help), group: 3 },
   { key: KeyName.Quit, label: 'q', desc: () => t((m) => m.menu.quit), group: 3 },
 ];

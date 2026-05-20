@@ -49,6 +49,7 @@ const SECTIONS: SectionDef[] = [
     entries: [
       ['tab', () => t((m) => m.help.entries.switchTab)],
       ['shift+↑ / shift+↓', () => t((m) => m.help.entries.scroll)],
+      ['T', () => t((m) => m.help.entries.tmux)],
       ['?', () => t((m) => m.help.entries.help)],
       ['q / Ctrl+C', () => t((m) => m.help.entries.quit)],
     ],

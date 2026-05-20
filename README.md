@@ -37,6 +37,7 @@ The original is great, but had a few friction points for CJK users and i18n in g
 - **Per-instance base branch chip** — the `based on …` label on the Diff tab is pinned per instance at creation time, not derived from host's current branch (so it doesn't lie after you `git checkout` in the host)
 - **Per-project state + worktree isolation** — opening claude-squad in different repos no longer shares a session list. Each repo gets its own `projects/<id>/state.json` and worktree pool. Legacy `~/.claude-squad/state.json` is migrated automatically on first launch
 - **Auto-commit on merge** — if the worktree is dirty when you merge, the overlay warns you and auto-commits the pending changes to the source branch first (matches the existing auto-commit-on-pause behavior)
+- **`T` = tmux manager panel** — opens a floating overlay listing every `claudesquad_*` tmux session tmux currently reports alive, marking each one tracked / orphan / attached and showing the foreground command + age. `d` kills the selected one, `a` clears all orphans. A footer indicator (`tmux N (+M orphan)`) on every screen turns yellow when orphans pile up, so abandoned sessions are visible at a glance
 - **Help overlay reflects actual keymap** — single source of truth in `HelpOverlay.tsx` (the old dead `HELP_BINDINGS` mirror is gone)
 
 ## Install
@@ -92,14 +93,17 @@ cs reset            # wipe all stored instances **for the current project**
 | `K` / `J`            | Reorder selected session up / down                                |
 | `↵` / `o`            | Attach to the selected session                                    |
 | `Ctrl+Q`             | Detach from an attached session (or `tmux prefix + d`)            |
+| `i`                  | Send a prompt to the live session without attaching               |
 | `s`                  | Commit changes and push branch to GitHub                          |
 | `c`                  | Checkout: commit, pause session, copy branch name to clipboard    |
-| `r`                  | Resume a paused session                                           |
+| `r`                  | Resume a paused session (or restart tmux for a session in error)  |
 | `m`                  | Merge worktree branch into host branch (agent keeps running)      |
 | `M`                  | Merge & retire — merge, then clean up tmux / worktree / branch    |
+| `a`                  | Apply — squash the instance branch into host as one commit, then retire |
 | `u`                  | Sync from base branch — pull host changes down into the worktree  |
 | `tab`                | Switch between Preview and Diff tabs                              |
 | `shift+↑` / `shift+↓`| Scroll preview / diff (Esc to exit scroll mode)                   |
+| `T`                  | Open the tmux manager panel — list / kill our live tmux sessions  |
 | `?`                  | Show full help                                                    |
 | `q` / `Ctrl+C`       | Quit                                                              |
 
