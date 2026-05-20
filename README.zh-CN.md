@@ -3,6 +3,9 @@
 > [**smtg-ai/claude-squad**](https://github.com/smtg-ai/claude-squad) 的 TypeScript / Bun / SolidJS + OpenTUI 重写版 —— 一个在 git worktree + tmux 中同时管理多个 Claude Code / Codex / Gemini / Aider 会话的终端工具。
 
 [![npm version](https://img.shields.io/npm/v/claude-squad-ts.svg)](https://www.npmjs.com/package/claude-squad-ts)
+[![npm downloads](https://img.shields.io/npm/dm/claude-squad-ts.svg)](https://www.npmjs.com/package/claude-squad-ts)
+[![Release](https://github.com/xluos/claude-squad-ts/actions/workflows/release.yml/badge.svg)](https://github.com/xluos/claude-squad-ts/actions/workflows/release.yml)
+[![Provenance](https://img.shields.io/badge/provenance-verified-success?logo=github)](https://www.npmjs.com/package/claude-squad-ts)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [English](./README.md) | **简体中文**

@@ -3,6 +3,9 @@
 > TypeScript / Bun / SolidJS + OpenTUI rewrite of [**smtg-ai/claude-squad**](https://github.com/smtg-ai/claude-squad) — a terminal app that manages multiple Claude Code / Codex / Gemini / Aider sessions, each in its own git worktree + tmux session.
 
 [![npm version](https://img.shields.io/npm/v/claude-squad-ts.svg)](https://www.npmjs.com/package/claude-squad-ts)
+[![npm downloads](https://img.shields.io/npm/dm/claude-squad-ts.svg)](https://www.npmjs.com/package/claude-squad-ts)
+[![Release](https://github.com/xluos/claude-squad-ts/actions/workflows/release.yml/badge.svg)](https://github.com/xluos/claude-squad-ts/actions/workflows/release.yml)
+[![Provenance](https://img.shields.io/badge/provenance-verified-success?logo=github)](https://www.npmjs.com/package/claude-squad-ts)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **English** | [简体中文](./README.zh-CN.md)
