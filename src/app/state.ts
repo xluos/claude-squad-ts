@@ -86,7 +86,8 @@ export type PendingHelp =
 export type ConfirmAction =
   | { kind: 'kill'; index: number }
   | { kind: 'pause'; index: number }
-  | { kind: 'push'; index: number };
+  | { kind: 'push'; index: number }
+  | { kind: 'apply'; index: number; hostBranch: string };
 
 export const initialModel: AppModel = {
   instances: [],

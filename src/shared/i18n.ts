@@ -81,6 +81,8 @@ const EN = {
     kill: (name: string) => `Delete instance "${name}" and its worktree?`,
     pause: (name: string) => `Pause "${name}"? Worktree will be removed but branch kept.`,
     push: (branch: string) => `Push branch "${branch}" to origin and open in browser?`,
+    apply: (name: string, host: string) =>
+      `Apply "${name}" — squash into ${host} as one commit and retire the instance?`,
   },
   merge: {
     headerCannot: 'Cannot merge',
@@ -126,6 +128,7 @@ const EN = {
       resume: 'Resume a paused session',
       merge: 'Merge worktree branch into the host branch (agent keeps running)',
       mergeRetire: 'Merge & retire — merge, then kill tmux / worktree / branch',
+      apply: 'Apply — squash the instance branch as one commit, then retire',
       sync: 'Sync from base branch — pull host changes down into the worktree',
       send: 'Send a prompt to the live session without attaching',
       switchTab: 'Switch between Preview and Diff tabs',
@@ -182,6 +185,12 @@ const EN = {
     syncConflicts: (host: string, n: number) =>
       `cannot sync ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
     syncFailed: (err: string) => `sync failed: ${err}`,
+    applied: (src: string, host: string) =>
+      `Applied ${src} → ${host} as one commit. Instance retired.`,
+    applyBlocked: (reason: string) => `cannot apply: ${reason}`,
+    applyConflicts: (host: string, n: number) =>
+      `cannot apply into ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
+    applyFailed: (err: string) => `apply failed: ${err}`,
   },
   menu: {
     new: 'new',
@@ -190,6 +199,7 @@ const EN = {
     submitPR: 'submit PR',
     checkout: 'checkout',
     merge: 'merge',
+    apply: 'apply',
     sync: 'sync',
     switchTab: 'switch tab',
     quit: 'quit',
@@ -268,6 +278,8 @@ const ZH: Messages = {
     kill: (name: string) => `删除实例 "${name}" 及其工作树？`,
     pause: (name: string) => `暂停 "${name}"？工作树将被移除但保留分支。`,
     push: (branch: string) => `推送分支 "${branch}" 到 origin 并在浏览器打开？`,
+    apply: (name: string, host: string) =>
+      `Apply "${name}" —— squash 成一个 commit 合入 ${host}，并关闭实例？`,
   },
   merge: {
     headerCannot: '无法合并',
@@ -312,6 +324,7 @@ const ZH: Messages = {
       resume: '恢复已暂停的会话',
       merge: '把工作树分支合入主分支（会话继续保留）',
       mergeRetire: '合并并关闭 —— 合并后清理 tmux / 工作树 / 分支',
+      apply: 'Apply —— 把分支 squash 成单个 commit，再关闭实例',
       sync: '从基准分支同步下来 —— 把 host 的新提交拉进工作树',
       send: '不接入会话、直接向运行中的会话发送一段提示词',
       switchTab: '在 Preview 和 Diff 之间切换',
@@ -365,6 +378,11 @@ const ZH: Messages = {
     syncBlocked: (reason: string) => `无法同步: ${reason}`,
     syncConflicts: (host: string, n: number) => `无法同步 ${host}: ${n} 个文件会冲突`,
     syncFailed: (err: string) => `同步失败: ${err}`,
+    applied: (src: string, host: string) =>
+      `已 apply ${src} → ${host}（一个 commit）。实例已关闭。`,
+    applyBlocked: (reason: string) => `无法 apply: ${reason}`,
+    applyConflicts: (host: string, n: number) => `无法 apply 到 ${host}: ${n} 个文件会冲突`,
+    applyFailed: (err: string) => `apply 失败: ${err}`,
   },
   menu: {
     new: '新建',
@@ -373,6 +391,7 @@ const ZH: Messages = {
     submitPR: '提 PR',
     checkout: '切出',
     merge: '合并',
+    apply: 'apply',
     sync: '同步',
     switchTab: '切 tab',
     quit: '退出',

@@ -16,9 +16,10 @@ import {
   mergeIntoHost,
   precheckMerge,
   precheckSyncFromHost,
+  squashMergeIntoHost,
   syncFromHost,
 } from '../session/git/merge.js';
-import { fetchPrune, searchBranches } from '../session/git/util.js';
+import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
 import { writeClipboard } from '../shared/clipboard.js';
@@ -429,6 +430,16 @@ export function App(props: AppProps) {
       void runSyncFromHost(selected);
       return;
     }
+    if (seq === 'a') {
+      // a = apply: squash the whole instance branch into the host's
+      // current branch as a single commit, then retire the instance.
+      // Distinct from `M` (merge & retire) which preserves the full
+      // commit history. Always behind a confirm overlay — it both
+      // mutates host history *and* deletes the instance.
+      store.setPressedKey('a');
+      void openApplyFlow(store.model.selected, selected);
+      return;
+    }
   });
 
   // ===== Merge =====
@@ -558,6 +569,62 @@ export function App(props: AppProps) {
     } catch (err) {
       store.setError(t((m) => m.toast.syncFailed)(errMsg(err)));
     }
+  }
+
+  // ===== Apply (squash + retire) =====
+  // Up-front precheck (read-only, via `merge-tree`) so the confirm overlay
+  // only opens for actions that have a chance of succeeding. Apply has the
+  // same conflict surface as a regular merge, so we reuse `precheckMerge`.
+  async function openApplyFlow(index: number, inst: Instance): Promise<void> {
+    if (!inst.branch) {
+      store.setError(t((m) => m.toast.noBranchYet));
+      return;
+    }
+    try {
+      const hostBranch = await getHostBranch(props.repoPath);
+      if (!hostBranch) {
+        store.setError(t((m) => m.toast.applyBlocked)('host repo is in detached HEAD'));
+        return;
+      }
+      const pre = await precheckMerge(props.repoPath, inst.branch);
+      if (pre.blocker) {
+        store.setError(t((m) => m.toast.applyBlocked)(pre.blocker));
+        return;
+      }
+      if (pre.conflicts.length > 0) {
+        store.setError(t((m) => m.toast.applyConflicts)(hostBranch, pre.conflicts.length));
+        return;
+      }
+      store.openConfirm({ kind: 'apply', index, hostBranch });
+    } catch (err) {
+      store.setError(t((m) => m.toast.applyFailed)(errMsg(err)));
+    }
+  }
+
+  async function runApply(inst: Instance, hostBranch: string): Promise<void> {
+    // Mirror `m`'s auto-commit so the agent's in-flight edits land in the
+    // squash result. Without this they'd be stranded in a worktree we're
+    // about to delete.
+    await inst.commitDirty(`[claudesquad] auto-commit on apply of ${inst.title}`);
+    const message = `[claudesquad] squash apply from ${inst.title}`;
+    await squashMergeIntoHost(props.repoPath, inst.branch, message);
+    // Retire the instance: kill tmux/worktree and drop from the list.
+    // Failure here doesn't unwind the squash (that's already committed) —
+    // surface as a separate error so the success isn't swallowed.
+    try {
+      await inst.kill();
+      store.removeInstance(inst.title);
+    } catch (err) {
+      store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
+      return;
+    }
+    store.setInfo(t((m) => m.toast.applied)(inst.branch, hostBranch));
+    // Refresh every remaining instance — the host branch just moved
+    // forward by one commit, so their `↓N` counters need to catch up.
+    await Promise.all(
+      store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
+    );
+    store.bumpRev();
   }
 
   // Conflict path → fall back to the same flow the `c` key drives: pause
@@ -809,9 +876,15 @@ export function App(props: AppProps) {
         }
       } else if (action.kind === 'push') {
         await inst.pushChanges(`[claudesquad] push from ${inst.title}`, true);
+      } else if (action.kind === 'apply') {
+        await runApply(inst, action.hostBranch);
       }
     } catch (err) {
-      store.setError(errMsg(err));
+      if (action.kind === 'apply') {
+        store.setError(t((m) => m.toast.applyFailed)(errMsg(err)));
+      } else {
+        store.setError(errMsg(err));
+      }
     }
     // `pause()` / `kill()` / `pushChanges()` only mutate class fields on
     // the Instance (status, diffStats, …). Solid's createStore is blind
@@ -1219,6 +1292,8 @@ function confirmMessage(model: ReturnType<typeof createAppStore>['model']): stri
       return t((m) => m.confirm.pause)(name);
     case 'push':
       return t((m) => m.confirm.push)(inst?.branch ?? '');
+    case 'apply':
+      return t((m) => m.confirm.apply)(name, action.hostBranch);
   }
 }
 

@@ -113,6 +113,37 @@ export async function mergeIntoHost(hostPath: string, sourceBranch: string): Pro
 }
 
 /**
+ * Squash-merge `sourceBranch` into the host repo's current branch and commit
+ * with a single message — the apply (`a`) flow. Conflict-safety: if the
+ * squash leaves unmerged paths, we run `git reset --hard HEAD` to wipe the
+ * half-applied state (the precheck already refused on a dirty host, so this
+ * only erases the squash's own staging). Caller is expected to have run
+ * `precheckMerge` first — squash and regular merge share the same conflict
+ * surface, so no separate dry-run helper.
+ */
+export async function squashMergeIntoHost(
+  hostPath: string,
+  sourceBranch: string,
+  message: string,
+): Promise<void> {
+  const sq = await runGit(['-C', hostPath, 'merge', '--squash', sourceBranch]);
+  if (sq.code !== 0) {
+    await runGit(['-C', hostPath, 'reset', '--hard', 'HEAD']);
+    throw new Error((sq.stderr || sq.stdout).trim() || `git merge --squash ${sourceBranch} failed`);
+  }
+  // `merge --squash` may yield an empty staging area when the source has no
+  // commits beyond host — treat as no-op success instead of erroring on
+  // "nothing to commit".
+  const diff = await runGit(['-C', hostPath, 'diff', '--cached', '--quiet']);
+  if (diff.code === 0) return;
+  const cm = await runGit(['-C', hostPath, 'commit', '-m', message]);
+  if (cm.code !== 0) {
+    await runGit(['-C', hostPath, 'reset', '--hard', 'HEAD']);
+    throw new Error((cm.stderr || cm.stdout).trim() || 'failed to commit squash result');
+  }
+}
+
+/**
  * Mirror of `precheckMerge` for the reverse direction: ask whether merging
  * the host's current branch *down into the worktree* would succeed cleanly.
  * Uses `git merge-tree` so neither the worktree files nor its index are
