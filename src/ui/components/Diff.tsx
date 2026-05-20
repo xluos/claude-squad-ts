@@ -1,3 +1,4 @@
+import type { RGBA } from '@opentui/core';
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { colors } from '../../shared/styles.js';
@@ -105,7 +106,7 @@ export function Diff(props: DiffProps) {
   );
 }
 
-function colorFor(line: string): string | undefined {
+function colorFor(line: string): string | RGBA | undefined {
   if (line.startsWith('+++') || line.startsWith('---')) return colors.muted;
   if (line.startsWith('@@')) return colors.accent;
   if (line.startsWith('+')) return colors.diffAdded;

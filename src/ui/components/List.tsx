@@ -1,3 +1,4 @@
+import type { RGBA } from '@opentui/core';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
@@ -179,7 +180,7 @@ function iconFor(status: Status): string {
   }
 }
 
-function iconColorFor(status: Status): string {
+function iconColorFor(status: Status): string | RGBA {
   switch (status) {
     case Status.Running:
       return colors.statusRunning;
