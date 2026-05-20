@@ -25,6 +25,7 @@ export function ConfirmationOverlay(props: ConfirmationOverlayProps) {
       flexDirection="column"
       borderStyle="double"
       borderColor={colors.warning}
+      backgroundColor={colors.overlayBg}
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}

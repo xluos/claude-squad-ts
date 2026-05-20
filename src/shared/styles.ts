@@ -25,6 +25,12 @@ export const colors = {
   // (`#dde4f0`). Pairs with `selectedFg` for readable dark text.
   selectedBg: '#dde4f0',
   selectedFg: '#1a1a1a',
+  // Solid fill for modal overlay bodies — opaque so the panel masks
+  // whatever sits underneath it, while the surrounding screen stays
+  // visible (no full-screen backdrop). Catppuccin-Mocha-ish dark slate:
+  // clearly "floating panel" against a #000 terminal bg without the
+  // pure-black look of an off-screen well.
+  overlayBg: '#1e1e2e',
   selectedBranch: '#444444',
   tabActive: '#FFFFFF',
   tabInactive: '#9CA3AF',

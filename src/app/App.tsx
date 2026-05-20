@@ -712,7 +712,7 @@ export function App(props: AppProps) {
   });
 
   const listWidth = createMemo(() => Math.max(30, Math.floor(dims().width * 0.32)));
-  const overlayWidth = createMemo(() => Math.min(80, Math.max(40, Math.floor(dims().width * 0.7))));
+  const overlayWidth = createMemo(() => Math.min(64, Math.max(40, Math.floor(dims().width * 0.5))));
 
   // Estimated inner content dimensions of the Preview / Diff pane. Used to
   // resize the underlying tmux session so its captured rows match what the
@@ -735,185 +735,194 @@ export function App(props: AppProps) {
   //   (when chrome > tmux size) and blank padding rows (when tmux <
   //   visible area).
   const previewCols = createMemo(() => Math.max(20, dims().width - listWidth() - 8));
-  // Each ErrorBox banner is `rounded` border (1) + 1 content row + border (1) = 3 rows.
-  // Error and info are independent fields and can stack, so we sum them.
-  const bannerRows = createMemo(() => {
-    let n = 0;
-    if (store.model.error) n += 3;
-    if (store.model.info) n += 3;
-    return n;
-  });
   const previewRows = createMemo(() => {
     const s = store.model.state;
     const footer = s === APP_STATE.Prompt ? 1 : 0;
-    return Math.max(8, dims().height - 5 - footer - bannerRows());
+    return Math.max(8, dims().height - 5 - footer);
   });
 
-  // ====== Overlay-only branch ======
+  // ===== Render =====
+  //
+  // Main UI is always mounted. Overlays sit on top as absolutely-positioned
+  // siblings (zIndex 10) so the underlying List/Preview stays visible behind
+  // the modal — the overlay body itself has a solid backgroundColor that
+  // masks just the panel area. Previously the outer was `<Switch fallback>`,
+  // which fully replaced the main UI while a modal was open and left the
+  // rest of the screen blank.
   return (
-    <Switch
-      fallback={
-        // ===== Main UI =====
-        <box flexDirection="column" width={dims().width} height={dims().height}>
-          <box flexDirection="row" flexGrow={1}>
-            <InstanceList
-              instances={store.model.instances}
-              selectedIndex={store.model.selected}
-              width={listWidth()}
-              height={dims().height - 1 - bannerRows()}
-              autoYes={props.autoYes ?? props.config.auto_yes}
-              rev={store.model.rev}
-              newInstanceRow={
-                store.model.state === APP_STATE.New ? (
-                  <NewInstanceRow
-                    index={store.model.instances.length + 1}
-                    placeholder="name… (中文也可)"
-                    textareaRef={(r) => {
-                      nameTextareaRef = r;
-                    }}
-                    onContentChange={() => setInputValue(nameTextareaRef?.plainText ?? '')}
-                    onSubmit={() => {
-                      setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
-                    }}
-                    onKeyDown={onTextareaKey}
-                  />
-                ) : undefined
-              }
-            />
-            <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} gap={0}>
-              <TabbedWindow active={store.model.activeTab} hint="tab / shift+tab to switch">
-                <Switch>
-                  <Match when={store.model.activeTab === 'preview'}>
-                    <Preview
-                      instance={selectedInstance()}
-                      paused={selectedPaused()}
-                      width={previewCols()}
-                      height={previewRows()}
-                      scrollMode={store.model.scrollMode}
-                      scrollOffset={store.model.scrollOffset}
-                      onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
-                      onScrollLimit={(m) => store.setScrollMax(m)}
-                    />
-                  </Match>
-                  <Match when={store.model.activeTab === 'diff'}>
-                    <Diff
-                      instance={selectedInstance()}
-                      paused={selectedPaused()}
-                      height={previewRows()}
-                      scrollMode={store.model.scrollMode}
-                      scrollOffset={store.model.scrollOffset}
-                      onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
-                      onScrollLimit={(m) => store.setScrollMax(m)}
-                    />
-                  </Match>
-                </Switch>
-              </TabbedWindow>
-              {/* Profile picker (only when in Prompt mode + multiple profiles) */}
-              <Show when={store.model.state === APP_STATE.Prompt && profiles().length > 1}>
-                <box flexDirection="row" flexShrink={0} gap={1}>
-                  <text fg={colors.muted}>program:</text>
-                  <For each={profiles()}>
-                    {(p) => {
-                      const active = () =>
-                        (store.model.selectedProfile || profiles()[0]?.name) === p.name;
-                      return (
-                        <text
-                          fg={active() ? colors.accent : colors.muted}
-                          attributes={active() ? 1 : 0}
-                        >
-                          {active() ? `[${p.name}]` : ` ${p.name} `}
-                        </text>
-                      );
-                    }}
-                  </For>
-                  <text fg={colors.muted}>(tab to cycle)</text>
-                </box>
-              </Show>
-
-              {/* Input — only rendered when in Prompt mode. The New flow
-               *  uses the inline NewInstanceRow inside the InstanceList,
-               *  and in idle there's nothing to type, so the empty
-               *  textarea + duplicated `? for shortcuts` placeholder
-               *  served no purpose (and confused the reader). */}
-              <Show when={store.model.state === APP_STATE.Prompt}>
-                <box flexDirection="row" flexShrink={0}>
-                  <text fg="cyan" attributes={1}>
-                    {'> '}
-                  </text>
-                  <textarea
-                    flexGrow={1}
-                    ref={(r) => {
-                      textareaRef = r;
-                    }}
-                    placeholder={inputPlaceholder()}
-                    placeholderColor={colors.muted}
-                    focusedTextColor="white"
-                    textColor="white"
-                    focused={true}
-                    // Override OpenTUI's default (Enter → newline, Meta+Enter →
-                    // submit). For session names + prompts a plain Enter should
-                    // submit; Shift+Enter inserts an explicit newline if needed.
-                    keyBindings={SUBMIT_ON_ENTER_BINDINGS}
-                    onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
-                    onSubmit={() => {
-                      // Defer twice so IME flushes the trailing composed character
-                      // (opencode pattern). Without this the last pinyin char can
-                      // be lost when submitting with Enter immediately.
-                      setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
-                    }}
-                    onKeyDown={onTextareaKey}
-                  />
-                </box>
-              </Show>
-
-              {/* Branch picker (only when in Prompt mode) */}
-              <Show when={store.model.state === APP_STATE.Prompt}>
-                <box flexDirection="column" flexShrink={0}>
-                  <Show
-                    when={store.model.branchResults.length > 0}
-                    fallback={
-                      <text fg={colors.muted}>
-                        {store.model.branchFilter
-                          ? '(no matching branches — will create new branch from HEAD)'
-                          : '(blank → new branch from HEAD; type to search existing)'}
-                      </text>
-                    }
-                  >
-                    <text fg={colors.muted}>branches (↑↓ to select):</text>
-                    <For each={store.model.branchResults.slice(0, 5)}>
-                      {(b) => {
-                        const active = () => b === store.model.selectedBranch;
-                        return (
-                          <box flexDirection="row">
-                            <text fg={active() ? colors.accent : colors.muted}>
-                              {active() ? '▶ ' : '  '}
-                            </text>
-                            <text fg={active() ? colors.accent : 'white'} wrapMode="none">
-                              {b}
-                            </text>
-                          </box>
-                        );
-                      }}
-                    </For>
-                    <Show when={store.model.branchResults.length > 5}>
-                      <text fg={colors.muted}>
-                        {`  … +${store.model.branchResults.length - 5} more`}
-                      </text>
-                    </Show>
-                  </Show>
-                </box>
-              </Show>
-
-              {/* All mode-specific shortcuts (Esc cancel, ↵ submit/start,
-               *  ? help) now live in the bottom Menu so we never spend a
-               *  whole row on a hint that duplicates the menu line. */}
+    <box flexDirection="column" width={dims().width} height={dims().height}>
+      <box flexDirection="row" flexGrow={1}>
+        <InstanceList
+          instances={store.model.instances}
+          selectedIndex={store.model.selected}
+          width={listWidth()}
+          height={dims().height - 1}
+          autoYes={props.autoYes ?? props.config.auto_yes}
+          rev={store.model.rev}
+          onSelect={(i) => store.select(i)}
+          newInstanceRow={
+            store.model.state === APP_STATE.New ? (
+              <NewInstanceRow
+                index={store.model.instances.length + 1}
+                placeholder="name… (中文也可)"
+                textareaRef={(r) => {
+                  nameTextareaRef = r;
+                }}
+                onContentChange={() => setInputValue(nameTextareaRef?.plainText ?? '')}
+                onSubmit={() => {
+                  setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
+                }}
+                onKeyDown={onTextareaKey}
+              />
+            ) : undefined
+          }
+        />
+        <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} gap={0}>
+          <TabbedWindow
+            active={store.model.activeTab}
+            hint="tab / shift+tab to switch"
+            onTabClick={(id) => store.setTab(id)}
+          >
+            <Switch>
+              <Match when={store.model.activeTab === 'preview'}>
+                <Preview
+                  instance={selectedInstance()}
+                  paused={selectedPaused()}
+                  width={previewCols()}
+                  height={previewRows()}
+                  scrollMode={store.model.scrollMode}
+                  scrollOffset={store.model.scrollOffset}
+                  onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
+                  onScrollLimit={(m) => store.setScrollMax(m)}
+                />
+              </Match>
+              <Match when={store.model.activeTab === 'diff'}>
+                <Diff
+                  instance={selectedInstance()}
+                  paused={selectedPaused()}
+                  height={previewRows()}
+                  scrollMode={store.model.scrollMode}
+                  scrollOffset={store.model.scrollOffset}
+                  onScroll={(d) => (d === 'up' ? store.scrollUp() : store.scrollDown())}
+                  onScrollLimit={(m) => store.setScrollMax(m)}
+                />
+              </Match>
+            </Switch>
+          </TabbedWindow>
+          {/* Profile picker (only when in Prompt mode + multiple profiles) */}
+          <Show when={store.model.state === APP_STATE.Prompt && profiles().length > 1}>
+            <box flexDirection="row" flexShrink={0} gap={1}>
+              <text fg={colors.muted}>program:</text>
+              <For each={profiles()}>
+                {(p) => {
+                  const active = () =>
+                    (store.model.selectedProfile || profiles()[0]?.name) === p.name;
+                  return (
+                    <text
+                      fg={active() ? colors.accent : colors.muted}
+                      attributes={active() ? 1 : 0}
+                    >
+                      {active() ? `[${p.name}]` : ` ${p.name} `}
+                    </text>
+                  );
+                }}
+              </For>
+              <text fg={colors.muted}>(tab to cycle)</text>
             </box>
-          </box>
-          <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
+          </Show>
+
+          {/* Input — only rendered when in Prompt mode. The New flow
+           *  uses the inline NewInstanceRow inside the InstanceList,
+           *  and in idle there's nothing to type, so the empty
+           *  textarea + duplicated `? for shortcuts` placeholder
+           *  served no purpose (and confused the reader). */}
+          <Show when={store.model.state === APP_STATE.Prompt}>
+            <box flexDirection="row" flexShrink={0}>
+              <text fg="cyan" attributes={1}>
+                {'> '}
+              </text>
+              <textarea
+                flexGrow={1}
+                ref={(r) => {
+                  textareaRef = r;
+                }}
+                placeholder={inputPlaceholder()}
+                placeholderColor={colors.muted}
+                focusedTextColor="white"
+                textColor="white"
+                focused={true}
+                // Override OpenTUI's default (Enter → newline, Meta+Enter →
+                // submit). For session names + prompts a plain Enter should
+                // submit; Shift+Enter inserts an explicit newline if needed.
+                keyBindings={SUBMIT_ON_ENTER_BINDINGS}
+                onContentChange={() => setInputValue(textareaRef?.plainText ?? '')}
+                onSubmit={() => {
+                  // Defer twice so IME flushes the trailing composed character
+                  // (opencode pattern). Without this the last pinyin char can
+                  // be lost when submitting with Enter immediately.
+                  setTimeout(() => setTimeout(() => void submitInput(), 0), 0);
+                }}
+                onKeyDown={onTextareaKey}
+              />
+            </box>
+          </Show>
+
+          {/* Branch picker (only when in Prompt mode) */}
+          <Show when={store.model.state === APP_STATE.Prompt}>
+            <box flexDirection="column" flexShrink={0}>
+              <Show
+                when={store.model.branchResults.length > 0}
+                fallback={
+                  <text fg={colors.muted}>
+                    {store.model.branchFilter
+                      ? '(no matching branches — will create new branch from HEAD)'
+                      : '(blank → new branch from HEAD; type to search existing)'}
+                  </text>
+                }
+              >
+                <text fg={colors.muted}>branches (↑↓ to select):</text>
+                <For each={store.model.branchResults.slice(0, 5)}>
+                  {(b) => {
+                    const active = () => b === store.model.selectedBranch;
+                    return (
+                      <box flexDirection="row">
+                        <text fg={active() ? colors.accent : colors.muted}>
+                          {active() ? '▶ ' : '  '}
+                        </text>
+                        <text fg={active() ? colors.accent : 'white'} wrapMode="none">
+                          {b}
+                        </text>
+                      </box>
+                    );
+                  }}
+                </For>
+                <Show when={store.model.branchResults.length > 5}>
+                  <text fg={colors.muted}>
+                    {`  … +${store.model.branchResults.length - 5} more`}
+                  </text>
+                </Show>
+              </Show>
+            </box>
+          </Show>
+
+          {/* All mode-specific shortcuts (Esc cancel, ↵ submit/start,
+           *  ? help) now live in the bottom Menu so we never spend a
+           *  whole row on a hint that duplicates the menu line. */}
+        </box>
+      </box>
+      <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
+
+      {/* ===== Toast banners — float above the Menu, auto-dismiss. =====
+       *  Right-anchored at bottom (just above the Menu row) so they don't
+       *  reshape the main UI; zIndex 5 keeps them under modal overlays
+       *  (zIndex 10) — a modal should be the user's full attention, not
+       *  share screen real-estate with a passing toast. */}
+      <Show when={store.model.error || store.model.info}>
+        <box position="absolute" bottom={1} right={2} flexDirection="column" gap={0} zIndex={5}>
           <Show when={store.model.error}>
             <ErrorBox
               message={store.model.error}
-              width={Math.floor(dims().width * 0.9)}
+              width={Math.min(80, Math.floor(dims().width * 0.6))}
               onDismiss={() => store.setError(null)}
             />
           </Show>
@@ -921,21 +930,25 @@ export function App(props: AppProps) {
             <ErrorBox
               message={store.model.info}
               kind="info"
-              width={Math.floor(dims().width * 0.9)}
+              width={Math.min(80, Math.floor(dims().width * 0.6))}
               onDismiss={() => store.setInfo(null)}
             />
           </Show>
         </box>
-      }
-    >
-      {/* ===== Centered modal overlays ===== */}
-      <Match when={store.model.state === APP_STATE.Confirm}>
+      </Show>
+
+      {/* ===== Modal overlays (absolute, masked by their own solid bg) ===== */}
+      <Show when={store.model.state === APP_STATE.Confirm}>
         <box
+          position="absolute"
+          top={0}
+          left={0}
           width={dims().width}
           height={dims().height}
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          zIndex={10}
         >
           <ConfirmationOverlay
             message={confirmMessage(store.model)}
@@ -944,25 +957,33 @@ export function App(props: AppProps) {
             onCancel={() => store.closeOverlay()}
           />
         </box>
-      </Match>
-      <Match when={store.model.state === APP_STATE.Help}>
+      </Show>
+      <Show when={store.model.state === APP_STATE.Help}>
         <box
+          position="absolute"
+          top={0}
+          left={0}
           width={dims().width}
           height={dims().height}
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          zIndex={10}
         >
           <HelpOverlay width={overlayWidth()} onClose={() => store.closeOverlay()} />
         </box>
-      </Match>
-      <Match when={store.model.state === APP_STATE.Merge && store.model.mergePreview !== null}>
+      </Show>
+      <Show when={store.model.state === APP_STATE.Merge && store.model.mergePreview !== null}>
         <box
+          position="absolute"
+          top={0}
+          left={0}
           width={dims().width}
           height={dims().height}
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          zIndex={10}
         >
           <MergeOverlay
             preview={store.model.mergePreview!}
@@ -973,14 +994,18 @@ export function App(props: AppProps) {
             onCancel={() => store.closeOverlay()}
           />
         </box>
-      </Match>
-      <Match when={store.model.pendingHelp !== null}>
+      </Show>
+      <Show when={store.model.pendingHelp !== null}>
         <box
+          position="absolute"
+          top={0}
+          left={0}
           width={dims().width}
           height={dims().height}
           flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          zIndex={10}
         >
           {(() => {
             const ph = store.model.pendingHelp!;
@@ -995,8 +1020,8 @@ export function App(props: AppProps) {
             );
           })()}
         </box>
-      </Match>
-    </Switch>
+      </Show>
+    </box>
   );
 }
 

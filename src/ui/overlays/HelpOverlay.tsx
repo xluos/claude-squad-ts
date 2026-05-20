@@ -56,6 +56,7 @@ export function HelpOverlay(props: HelpOverlayProps) {
       flexDirection="column"
       borderStyle="double"
       borderColor={colors.primary}
+      backgroundColor={colors.overlayBg}
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}

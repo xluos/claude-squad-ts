@@ -22,12 +22,13 @@ export function ErrorBox(props: ErrorBoxProps) {
       <box
         borderStyle="rounded"
         borderColor={props.kind === 'info' ? colors.success : colors.danger}
+        backgroundColor={colors.overlayBg}
         paddingLeft={1}
         paddingRight={1}
         width={props.width}
         flexShrink={0}
       >
-        <text fg={props.kind === 'info' ? colors.success : colors.danger}>
+        <text fg={props.kind === 'info' ? colors.success : colors.danger} bg={colors.overlayBg}>
           {props.kind === 'info' ? '✓ ' : '⚠ '}
           {props.message}
         </text>

@@ -73,6 +73,7 @@ export function MergeOverlay(props: MergeOverlayProps) {
       flexDirection="column"
       borderStyle="double"
       borderColor={headerColor()}
+      backgroundColor={colors.overlayBg}
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}
