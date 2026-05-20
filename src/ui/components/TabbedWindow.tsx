@@ -12,6 +12,8 @@ export interface TabbedWindowProps {
   active: TabId;
   /** Optional hint shown on the right side of the tab strip. */
   hint?: string;
+  /** Click handler on a tab label or its underline indicator. */
+  onTabClick?: (id: TabId) => void;
   children: JSX.Element;
 }
 
@@ -38,6 +40,7 @@ export function TabbedWindow(props: TabbedWindowProps) {
               <text
                 fg={active() ? colors.tabActive : colors.tabInactive}
                 attributes={active() ? 1 : 0}
+                onMouseDown={() => props.onTabClick?.(t.id)}
               >
                 {t.label}
               </text>
@@ -54,7 +57,10 @@ export function TabbedWindow(props: TabbedWindowProps) {
           {(t) => {
             const active = () => props.active === t.id;
             return (
-              <text fg={active() ? colors.primary : colors.muted}>
+              <text
+                fg={active() ? colors.primary : colors.muted}
+                onMouseDown={() => props.onTabClick?.(t.id)}
+              >
                 {active() ? '━'.repeat(t.label.length) : ' '.repeat(t.label.length)}
               </text>
             );

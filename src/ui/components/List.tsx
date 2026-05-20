@@ -17,22 +17,18 @@ export interface InstanceListProps {
    *  used by the "new session" flow so the user types the name where the
    *  row will actually live. */
   newInstanceRow?: JSX.Element;
+  /** Click handler: receives the 0-based index of the row the user pressed. */
+  onSelect?: (index: number) => void;
 }
 
 export function InstanceList(props: InstanceListProps) {
   return (
     <box flexDirection="column" width={props.width} height={props.height}>
-      {/* Top spacer: the right column's tab strip is 2 rows tall
-       *  (label row + ━ underline row). One blank row above the chip
-       *  on the left lines the InstanceList border top up with the
-       *  TabbedWindow content-area border top on the right. */}
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={1}
-        paddingRight={1}
-        marginTop={1}
-      >
+      {/* Top label row — sits on the same line as the right column's
+       *  `Preview Diff` tab labels. The blank line below this chip mirrors
+       *  the ━ underline row of the TabbedWindow, so both the labels and
+       *  the border tops line up across the two panels. */}
+      <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
         <text bg={colors.primary} fg="white" attributes={1}>
           {' Instances '}
         </text>
@@ -42,6 +38,7 @@ export function InstanceList(props: InstanceListProps) {
           </text>
         </Show>
       </box>
+      <text> </text>
       <box
         flexGrow={1}
         flexDirection="column"
@@ -80,6 +77,7 @@ export function InstanceList(props: InstanceListProps) {
                 index={idx() + 1}
                 selected={idx() === props.selectedIndex}
                 rev={props.rev}
+                onClick={() => props.onSelect?.(idx())}
               />
             )}
           </For>
@@ -97,6 +95,7 @@ interface RowProps {
   index: number;
   selected: boolean;
   rev: number;
+  onClick?: () => void;
 }
 
 function Row(props: RowProps) {
@@ -129,7 +128,13 @@ function Row(props: RowProps) {
   const branchFg = () => (props.selected ? colors.selectedBranch : colors.muted);
 
   return (
-    <box flexDirection="column" backgroundColor={bg()} paddingLeft={1} paddingRight={1}>
+    <box
+      flexDirection="column"
+      backgroundColor={bg()}
+      paddingLeft={1}
+      paddingRight={1}
+      onMouseDown={() => props.onClick?.()}
+    >
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
         <box flexDirection="row" backgroundColor={bg()}>
           <text fg={indexFg()} bg={bg()}>
