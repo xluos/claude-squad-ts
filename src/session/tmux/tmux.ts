@@ -169,7 +169,6 @@ export class TmuxSession {
     // top rows of content. Manual mode honours every resize-window
     // we issue.
     await runCmd('tmux', ['set-option', '-t', this.name, 'window-size', 'manual']);
-    await runCmd('tmux', ['set-option', '-t', this.name, 'status', 'off']);
     await ensureDetachBinding();
   }
 
