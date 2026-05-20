@@ -26,6 +26,20 @@ export async function hasInitialCommit(repoPath: string): Promise<boolean> {
   return r.code === 0;
 }
 
+/**
+ * The host repo's currently checked-out branch — i.e. the prospective
+ * merge target that `commitCounts()` uses as the `↑↓` reference. Returns
+ * null when HEAD is detached, when the repo has no commits yet, or on
+ * any git error, since the only consumer (the Diff tab label) just
+ * hides itself in those cases.
+ */
+export async function getHostBranch(repoPath: string): Promise<string | null> {
+  const r = await runGit(['-C', repoPath, 'symbolic-ref', '--short', '-q', 'HEAD']);
+  if (r.code !== 0) return null;
+  const name = r.stdout.trim();
+  return name.length > 0 ? name : null;
+}
+
 /** Validate that gh CLI is installed and authenticated. */
 export async function ensureGhAuthed(): Promise<void> {
   const which = await runCmd('which', ['gh']);

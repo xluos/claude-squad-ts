@@ -16,6 +16,7 @@ export const KeyName = {
   Submit: 's',
   Merge: 'm',
   Kill: 'd',
+  Send: 'i',
   Help: '?',
   Quit: 'q',
   Cancel: 'esc',
@@ -41,6 +42,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { key: KeyName.New, label: 'n', desc: () => t((m) => m.menu.new), group: 1 },
   { key: KeyName.Kill, label: 'd', desc: () => t((m) => m.menu.kill), group: 1 },
   { key: KeyName.Enter, label: '↵/o', desc: () => t((m) => m.menu.open), group: 1 },
+  { key: KeyName.Send, label: 'i', desc: () => t((m) => m.menu.sendPrompt), group: 1 },
   { key: KeyName.Submit, label: 's', desc: () => t((m) => m.menu.submitPR), group: 2 },
   { key: KeyName.Checkout, label: 'c', desc: () => t((m) => m.menu.checkout), group: 2 },
   { key: KeyName.Merge, label: 'm', desc: () => t((m) => m.menu.merge), group: 2 },
@@ -71,6 +73,15 @@ export const NEW_INSTANCE_BINDINGS: KeyBinding[] = [
 
 export const PROMPT_BINDINGS: KeyBinding[] = [
   { key: KeyName.Enter, label: '↵', desc: () => t((m) => m.menu.submit) },
+  { key: KeyName.Cancel, label: 'esc', desc: () => t((m) => m.menu.cancel) },
+];
+
+// Send-prompt mode: a one-line forward into the live tmux pane. No branch
+// picker, no profile picker — same affordances as PROMPT_BINDINGS but
+// labelled "send" so the user knows the keystroke goes to the agent, not
+// to a session-creation flow.
+export const SEND_BINDINGS: KeyBinding[] = [
+  { key: KeyName.Enter, label: '↵', desc: () => t((m) => m.menu.send) },
   { key: KeyName.Cancel, label: 'esc', desc: () => t((m) => m.menu.cancel) },
 ];
 

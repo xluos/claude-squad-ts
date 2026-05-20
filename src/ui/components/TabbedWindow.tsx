@@ -1,6 +1,9 @@
+import { TextAttributes } from '@opentui/core';
 import { For, type JSX, Show } from 'solid-js';
+import stringWidth from 'string-width';
 import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
+import type { DiffStats } from '../../shared/types.js';
 
 export type TabId = 'preview' | 'diff';
 
@@ -16,6 +19,14 @@ export interface TabbedWindowProps {
   active: TabId;
   /** Optional hint shown on the right side of the tab strip. */
   hint?: string;
+  /** Diff stats for the currently selected instance. Rendered as
+   *  `+N -M` to the left of the hint — hidden when both sides are 0,
+   *  so a clean tree leaves the slot empty. */
+  diffStats?: DiffStats;
+  /** Host repo's current branch — shown immediately left of `diffStats`
+   *  as the "based on …" label. Same visibility gating as diffStats:
+   *  only when there's a non-zero diff and a branch name is known. */
+  baseBranch?: string;
   /** Click handler on a tab label or its underline indicator. */
   onTabClick?: (id: TabId) => void;
   children: JSX.Element;
@@ -51,21 +62,45 @@ export function TabbedWindow(props: TabbedWindowProps) {
             );
           }}
         </For>
-        <box flexGrow={1} />
+        {/* Hint sits immediately right of the tab labels — it explains how
+         *  to operate them, so it belongs next to them, not on the far
+         *  right. Base branch + diff stats describe the right pane's
+         *  content (what we're diffing against, how big the diff is) and
+         *  get pushed all the way out to the right edge by the spacer.
+         *
+         *  Parentheses + DIM attribute knock the hint down a tier so it
+         *  reads as auxiliary metadata, not a third tab label —
+         *  terminals don't have sub-cell font sizing, so visual hierarchy
+         *  comes from punctuation + dim intensity instead. */}
         <Show when={props.hint}>
-          <text fg={colors.muted}>{props.hint}</text>
+          <text fg={colors.muted} attributes={TextAttributes.DIM}>
+            {`(${props.hint})`}
+          </text>
+        </Show>
+        <box flexGrow={1} />
+        <Show when={props.diffStats && (props.diffStats.added > 0 || props.diffStats.removed > 0)}>
+          <box flexDirection="row" gap={1}>
+            <Show when={props.baseBranch}>
+              <text fg={colors.muted}>{` ${props.baseBranch}`}</text>
+            </Show>
+            <text fg={colors.diffAdded}>{`+${props.diffStats?.added ?? 0}`}</text>
+            <text fg={colors.diffRemoved}>{`-${props.diffStats?.removed ?? 0}`}</text>
+          </box>
         </Show>
       </box>
       <box flexDirection="row" gap={2}>
         <For each={TABS}>
           {(tab) => {
             const active = () => props.active === tab.id;
+            // Use display width (CJK = 2 cells) not code-point count, so the
+            // underline matches the label and the gap between tabs stays aligned.
+            const width = () => stringWidth(tab.label());
             return (
               <text
                 fg={active() ? colors.primary : colors.muted}
                 onMouseDown={() => props.onTabClick?.(tab.id)}
               >
-                {active() ? '━'.repeat(tab.label().length) : ' '.repeat(tab.label().length)}
+                {(active() ? '━' : ' ').repeat(width())}
               </text>
             );
           }}

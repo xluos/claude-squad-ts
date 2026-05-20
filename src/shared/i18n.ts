@@ -70,6 +70,11 @@ const EN = {
     newName: 'Name new session (中文也可)…',
     prompt: 'Prompt for new session (中文也可)…',
   },
+  sendPrompt: {
+    header: 'Send to',
+    placeholder: 'Type a prompt — Enter to send, Shift+Enter for newline…',
+    hint: '↵ send  ·  Shift+↵ newline  ·  Esc cancel',
+  },
   confirm: {
     yes: '[Y] Yes',
     no: '[N] No',
@@ -167,6 +172,9 @@ const EN = {
     nameRequired: 'name required',
     nameExists: (name: string) => `instance "${name}" already exists`,
     promptRequired: 'prompt required',
+    sendNotRunning: 'session is not running — resume it first',
+    sendEmpty: 'nothing to send',
+    sendFailed: (err: string) => `failed to send: ${err}`,
   },
   menu: {
     new: 'new',
@@ -182,6 +190,8 @@ const EN = {
     start: 'start',
     submit: 'submit',
     cancel: 'cancel',
+    sendPrompt: 'send',
+    send: 'send',
   },
 };
 
@@ -238,6 +248,11 @@ const ZH: Messages = {
   placeholder: {
     newName: '命名新会话 (中文也可)…',
     prompt: '新会话的提示词 (中文也可)…',
+  },
+  sendPrompt: {
+    header: '发送到',
+    placeholder: '输入要发送的内容 —— Enter 发送，Shift+Enter 换行…',
+    hint: '↵ 发送  ·  Shift+↵ 换行  ·  Esc 取消',
   },
   confirm: {
     yes: '[Y] 是',
@@ -333,6 +348,9 @@ const ZH: Messages = {
     nameRequired: '请输入名称',
     nameExists: (name: string) => `实例 "${name}" 已存在`,
     promptRequired: '请输入提示词',
+    sendNotRunning: '会话未运行 —— 请先 r 恢复',
+    sendEmpty: '没有要发送的内容',
+    sendFailed: (err: string) => `发送失败: ${err}`,
   },
   menu: {
     new: '新建',
@@ -348,6 +366,8 @@ const ZH: Messages = {
     start: '开始',
     submit: '提交',
     cancel: '取消',
+    sendPrompt: '发送',
+    send: '发送',
   },
 };
 

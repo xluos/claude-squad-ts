@@ -44,12 +44,12 @@
 ### 从 npm 装
 
 ```bash
-npm install -g claude-squad-ts
-# 或
 bun install -g claude-squad-ts
+# npm 也能装，但运行时 Bun 必须在 PATH 上：
+npm install -g claude-squad-ts
 ```
 
-装好后有 `cs` 命令（跟原版对齐）和 `claude-squad-ts` 长名。
+装好后有 `cs` 命令（跟原版对齐）和 `claude-squad-ts` 长名。打包产物的 shebang 是 `#!/usr/bin/env bun`，并且 OpenTUI 渲染器用 `bun:ffi` 加载 Zig 库 —— 没有 Node 兜底。
 
 ### 从源码装
 
@@ -63,7 +63,7 @@ bun run build
 
 ### 前置依赖
 
-- [Bun](https://bun.sh) ≥ 1.2（或 Node 20+ 来跑打包后的 JS）
+- [Bun](https://bun.sh) ≥ 1.2（仅 Bun —— OpenTUI 用 `bun:ffi`，没 Node 兜底）
 - [tmux](https://github.com/tmux/tmux/wiki/Installing)
 - [gh](https://cli.github.com/)（可选，只有 `s` 推 PR 需要）
 - 你要用的代理本身：`claude` / `codex` / `gemini` / `aider`，至少一个在 PATH 上

@@ -6,10 +6,11 @@ import {
   NEW_INSTANCE_BINDINGS,
   PAUSED_BINDINGS,
   PROMPT_BINDINGS,
+  SEND_BINDINGS,
 } from '../../shared/keymap.js';
 import { colors } from '../../shared/styles.js';
 
-export type MenuMode = 'default' | 'empty' | 'new' | 'prompt' | 'paused';
+export type MenuMode = 'default' | 'empty' | 'new' | 'prompt' | 'paused' | 'send';
 
 export interface MenuProps {
   mode: MenuMode;
@@ -37,6 +38,8 @@ export function Menu(props: MenuProps) {
         return NEW_INSTANCE_BINDINGS;
       case 'prompt':
         return PROMPT_BINDINGS;
+      case 'send':
+        return SEND_BINDINGS;
       case 'paused':
         return PAUSED_BINDINGS;
       default:

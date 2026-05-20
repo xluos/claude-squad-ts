@@ -42,6 +42,7 @@
     "dev": "bun run src/cli/index.ts",
     "dev:tui": "bun run src/cli/index.ts",
     "build": "bun run scripts/build.ts",
+    "build:link": "bun run build && bun link",
     "prepublishOnly": "rm -rf dist && bun run build",
     "start": "bun run dist/cli/index.js",
     "check": "tsc --noEmit && biome check src",
@@ -53,8 +54,7 @@
     "test:watch": "bun test --watch"
   },
   "engines": {
-    "bun": ">=1.2",
-    "node": ">=20"
+    "bun": ">=1.2"
   },
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.12",
@@ -63,7 +63,8 @@
     "@opentui/solid": "0.2.14",
     "commander": "^14.0.3",
     "simple-git": "^3.36.0",
-    "solid-js": "1.9.12"
+    "solid-js": "1.9.12",
+    "string-width": "^7.2.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.0",

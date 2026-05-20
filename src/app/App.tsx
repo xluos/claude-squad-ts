@@ -13,7 +13,7 @@ import {
   Switch,
 } from 'solid-js';
 import { mergeIntoHost, precheckMerge } from '../session/git/merge.js';
-import { fetchPrune, searchBranches } from '../session/git/util.js';
+import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
 import { writeClipboard } from '../shared/clipboard.js';
@@ -43,6 +43,7 @@ import { ConfirmationOverlay } from '../ui/overlays/ConfirmationOverlay.js';
 import { HelpOverlay } from '../ui/overlays/HelpOverlay.js';
 import { agentLabel, MergeOverlay } from '../ui/overlays/MergeOverlay.js';
 import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
+import { SendPromptOverlay } from '../ui/overlays/SendPromptOverlay.js';
 import { createAppStore } from './state.js';
 
 /**
@@ -93,6 +94,12 @@ export function App(props: AppProps) {
   let textareaRef: TextareaRenderable | undefined;
   let nameTextareaRef: TextareaRenderable | undefined;
   const [inputValue, setInputValue] = createSignal('');
+  // Host repo's current branch — the prospective merge target. Surfaced
+  // on the Diff tab label so the `+N -M` next to it is legible at a
+  // glance ("changed this much relative to <hostBranch>"). Refreshed by
+  // the metadata tick so checking out a different host branch is
+  // reflected without a relaunch. Null = detached HEAD or unborn repo.
+  const [hostBranch, setHostBranch] = createSignal<string | null>(null);
 
   // ===== Persistence: restore + save =====
   //
@@ -181,6 +188,24 @@ export function App(props: AppProps) {
           } catch {
             // ignore transient git errors
           }
+          try {
+            const g = inst.gitStatus;
+            const prev = `${g.modified}|${g.untracked}|${g.staged}|${g.deleted}|${g.renamed}|${g.conflicted}`;
+            await inst.computeGitStatus();
+            const n = inst.gitStatus;
+            const next = `${n.modified}|${n.untracked}|${n.staged}|${n.deleted}|${n.renamed}|${n.conflicted}`;
+            if (prev !== next) dirty = true;
+          } catch {
+            // ignore transient git errors
+          }
+        }
+        // Host branch is per-repo (not per-instance), so refresh once per tick
+        // outside the loop. Tracked via its own signal — no rev bump needed.
+        try {
+          const cur = await getHostBranch(props.repoPath);
+          if (cur !== hostBranch()) setHostBranch(cur);
+        } catch {
+          // ignore
         }
         if (dirty) store.bumpRev();
       })();
@@ -210,7 +235,10 @@ export function App(props: AppProps) {
   // ===== Global key handling =====
   // Active only when no modal is open AND the textarea isn't capturing input.
   const inputFocused = createMemo(
-    () => store.model.state === APP_STATE.New || store.model.state === APP_STATE.Prompt,
+    () =>
+      store.model.state === APP_STATE.New ||
+      store.model.state === APP_STATE.Prompt ||
+      store.model.state === APP_STATE.Send,
   );
   const modalOpen = createMemo(
     () =>
@@ -339,6 +367,21 @@ export function App(props: AppProps) {
     if (seq === 'd') {
       store.setPressedKey('d');
       store.openConfirm({ kind: 'kill', index: store.model.selected });
+      return;
+    }
+    if (seq === 'i') {
+      // Forward a single prompt into the live tmux pane without attaching.
+      // Paused = no tmux, so reject before opening an input that can't be
+      // submitted; not-yet-started instances are skipped the same way.
+      if (selected.isPaused() || !selected.hasStarted()) {
+        store.setError(t((m) => m.toast.sendNotRunning));
+        return;
+      }
+      store.setPressedKey('i');
+      // Defer state transition past this `i` keypress so the overlay's
+      // freshly focused textarea doesn't eat the original key as input.
+      // The overlay focuses its own textarea on mount.
+      queueMicrotask(() => store.openSendPrompt());
       return;
     }
     if (seq === 'c') {
@@ -547,12 +590,39 @@ export function App(props: AppProps) {
     // Mirror opencode: re-read the textarea's native plainText right before
     // reading, so a still-composing IME character that hasn't reached the
     // onContentChange handler yet is captured.
+    //
+    // Send mode is dispatched directly from the overlay's onSubmit callback
+    // (it owns its own textarea), so it doesn't pass through this function.
     if (store.model.state === APP_STATE.New) {
       const text = nameTextareaRef?.plainText ?? inputValue();
       await submitNewName(text);
     } else if (store.model.state === APP_STATE.Prompt) {
       const text = textareaRef?.plainText ?? inputValue();
       await submitPrompt(text);
+    }
+  }
+
+  async function submitSendPrompt(rawPrompt: string): Promise<void> {
+    const text = rawPrompt.trim();
+    if (!text) {
+      store.setError(t((m) => m.toast.sendEmpty));
+      return;
+    }
+    const inst = selectedInstance();
+    if (!inst || inst.isPaused() || !inst.hasStarted()) {
+      store.setError(t((m) => m.toast.sendNotRunning));
+      return;
+    }
+    try {
+      // `sendPrompt` does send-keys -l <text> + sleep(100) + Enter — same
+      // path the initial-prompt flow uses, so behaviour matches what the
+      // agent sees on a fresh start.
+      await inst.sendPrompt(text);
+      // The overlay unmounts on closeOverlay() — its internal textarea
+      // disappears with it, so no explicit reset is needed.
+      store.closeOverlay();
+    } catch (err) {
+      store.setError(t((m) => m.toast.sendFailed)(errMsg(err)));
     }
   }
 
@@ -715,9 +785,17 @@ export function App(props: AppProps) {
     void store.model.rev;
     return selectedInstance()?.isPaused() ?? false;
   });
+  // Tracks `rev` so the diff-stats badge on the Diff tab refreshes whenever
+  // the metadata tick recomputes the selected instance's diff. Without the
+  // explicit rev read, the property access alone doesn't trigger Solid.
+  const selectedDiff = createMemo(() => {
+    void store.model.rev;
+    return selectedInstance()?.diffStats;
+  });
   const menuMode = createMemo<MenuMode>(() => {
     if (store.model.state === APP_STATE.New) return 'new';
     if (store.model.state === APP_STATE.Prompt) return 'prompt';
+    if (store.model.state === APP_STATE.Send) return 'send';
     if (store.model.instances.length === 0) return 'empty';
     if (selectedPaused()) return 'paused';
     return 'default';
@@ -806,6 +884,8 @@ export function App(props: AppProps) {
           <TabbedWindow
             active={store.model.activeTab}
             hint={t((m) => m.tabs.switchHint)}
+            diffStats={selectedDiff()}
+            baseBranch={hostBranch() ?? undefined}
             onTabClick={(id) => store.setTab(id)}
           >
             <Switch>
@@ -858,9 +938,8 @@ export function App(props: AppProps) {
 
           {/* Input — only rendered when in Prompt mode. The New flow
            *  uses the inline NewInstanceRow inside the InstanceList,
-           *  and in idle there's nothing to type, so the empty
-           *  textarea + duplicated `? for shortcuts` placeholder
-           *  served no purpose (and confused the reader). */}
+           *  Send mode renders a modal overlay (so the right pane's
+           *  height stays constant), and idle has nothing to type. */}
           <Show when={store.model.state === APP_STATE.Prompt}>
             <box flexDirection="row" flexShrink={0}>
               <text fg="cyan" attributes={1}>
@@ -1054,6 +1133,26 @@ export function App(props: AppProps) {
               />
             );
           })()}
+        </box>
+      </Show>
+      <Show when={store.model.state === APP_STATE.Send && selectedInstance() !== null}>
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={dims().width}
+          height={dims().height}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          zIndex={10}
+        >
+          <SendPromptOverlay
+            targetName={selectedInstance()?.displayName || selectedInstance()?.title || '?'}
+            width={overlayWidth()}
+            onSubmit={(text) => void submitSendPrompt(text)}
+            onCancel={() => store.closeOverlay()}
+          />
         </box>
       </Show>
     </box>

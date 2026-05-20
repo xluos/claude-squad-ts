@@ -44,12 +44,12 @@ The original is great, but had a few friction points for CJK users and i18n in g
 ### From npm
 
 ```bash
-npm install -g claude-squad-ts
-# or
 bun install -g claude-squad-ts
+# npm works too, but Bun still has to be on PATH at runtime:
+npm install -g claude-squad-ts
 ```
 
-This installs the `cs` binary (matching the original) and a longer `claude-squad-ts` alias.
+This installs the `cs` binary (matching the original) and a longer `claude-squad-ts` alias. The built JS has a `#!/usr/bin/env bun` shebang and OpenTUI's renderer uses `bun:ffi` — there is no Node fallback.
 
 ### From source
 
@@ -63,7 +63,7 @@ bun run build
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.2 (or Node 20+ to run the built JS)
+- [Bun](https://bun.sh) ≥ 1.2 (Bun-only — OpenTUI uses `bun:ffi`, no Node fallback)
 - [tmux](https://github.com/tmux/tmux/wiki/Installing)
 - [gh](https://cli.github.com/) (optional, for `s` push-PR flow)
 - A working `claude` / `codex` / `gemini` / `aider` on your `PATH`, depending on which agent you want to launch

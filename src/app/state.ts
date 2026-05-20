@@ -238,6 +238,12 @@ export function createAppStore() {
         }),
       );
     },
+    /** Open the inline "send a line to the selected session" textarea. No
+     *  branch / profile picker — we're just forwarding one prompt into an
+     *  already-running tmux pane via `tmux send-keys`. */
+    openSendPrompt() {
+      setModel('state', APP_STATE.Send);
+    },
     openConfirm(action: ConfirmAction) {
       setModel(
         produce((m) => {

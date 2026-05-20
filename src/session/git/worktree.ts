@@ -2,9 +2,10 @@ import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { worktreesRoot } from '../../shared/paths.js';
-import type { DiffStats, WorktreeData } from '../../shared/types.js';
+import type { DiffStats, GitStatus, WorktreeData } from '../../shared/types.js';
 import { computeDiff, computeDiffNumstat } from './diff.js';
 import { ensureOk, runCmd, runGit } from './exec.js';
+import { computeGitStatus } from './status.js';
 import {
   ensureGhAuthed,
   findRepoRoot,
@@ -39,6 +40,7 @@ export interface Worktree {
   prune(): Promise<void>;
   diff(): Promise<DiffStats>;
   diffNumstat(): Promise<DiffStats>;
+  status(): Promise<GitStatus>;
   commitCounts(): Promise<CommitCounts>;
   isDirty(): Promise<boolean>;
   isValid(): Promise<boolean>;
@@ -181,6 +183,10 @@ function buildWorktree(data: WorktreeData): Worktree {
 
     diffNumstat(): Promise<DiffStats> {
       return computeDiffNumstat(data.worktree_path, data.base_commit_sha);
+    },
+
+    status(): Promise<GitStatus> {
+      return computeGitStatus(data.worktree_path);
     },
 
     async commitCounts(): Promise<CommitCounts> {

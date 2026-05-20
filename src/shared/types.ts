@@ -26,6 +26,21 @@ export interface DiffStats {
   error?: string;
 }
 
+/** Compact `git status` summary for the instance list row.
+ *  Counts mirror starship's all_status segments: modified / untracked /
+ *  staged / deleted / renamed / conflicted. Intent-to-add entries (left
+ *  over from the diff path's `git add -N .`) are reclassified as
+ *  untracked via porcelain=v2's index-hash field so the count stays
+ *  honest across refresh ticks. */
+export interface GitStatus {
+  modified: number;
+  untracked: number;
+  staged: number;
+  deleted: number;
+  renamed: number;
+  conflicted: number;
+}
+
 export interface WorktreeData {
   repo_path: string;
   worktree_path: string;
@@ -68,6 +83,7 @@ export const APP_STATE = {
   Help: 3,
   Confirm: 4,
   Merge: 5,
+  Send: 6,
 } as const;
 export type AppStateValue = (typeof APP_STATE)[keyof typeof APP_STATE];
 

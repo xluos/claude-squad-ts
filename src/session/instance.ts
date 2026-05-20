@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { log } from '../shared/logger.js';
-import { type DiffStats, type InstanceData, type LLMConfig, Status } from '../shared/types.js';
+import {
+  type DiffStats,
+  type GitStatus,
+  type InstanceData,
+  type LLMConfig,
+  Status,
+} from '../shared/types.js';
 import { hasInitialCommit, isGitRepo } from './git/util.js';
 import {
   type CommitCounts,
@@ -54,6 +60,17 @@ export class Instance {
   /** Commit divergence vs the host repo's current branch since the worktree
    *  was cut. Refreshed by the periodic metadata loop and after merges. */
   commitStats: CommitCounts = { ahead: 0, behind: 0 };
+  /** `git status` bucket counts for the list-row bracket. Refreshed on the
+   *  same metadata tick as diffStats. Zero-initialised so freshly-created
+   *  instances render a clean (collapsed) bracket until the first tick. */
+  gitStatus: GitStatus = {
+    modified: 0,
+    untracked: 0,
+    staged: 0,
+    deleted: 0,
+    renamed: 0,
+    conflicted: 0,
+  };
 
   private started = false;
   private tmux: TmuxSession | null = null;
@@ -365,6 +382,13 @@ export class Instance {
     const stats = await this.worktree.commitCounts();
     this.commitStats = stats;
     return stats;
+  }
+
+  async computeGitStatus(): Promise<GitStatus> {
+    if (!this.worktree) return { ...this.gitStatus };
+    const s = await this.worktree.status();
+    this.gitStatus = s;
+    return s;
   }
 
   async sendPrompt(prompt: string): Promise<void> {

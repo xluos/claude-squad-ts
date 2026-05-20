@@ -4,6 +4,7 @@ import { For, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { t } from '../../shared/i18n.js';
 import { colors, icons } from '../../shared/styles.js';
+import type { GitStatus } from '../../shared/types.js';
 import { Status } from '../../shared/types.js';
 
 export interface InstanceListProps {
@@ -110,13 +111,33 @@ function Row(props: RowProps) {
     void props.rev;
     return props.instance.branch || '(pending)';
   };
-  const stats = () => {
+  const gitStatus = () => {
     void props.rev;
-    return props.instance.diffStats;
+    return props.instance.gitStatus;
   };
   const commits = () => {
     void props.rev;
     return props.instance.commitStats;
+  };
+  // Pre-assemble the bracket segments so we can hide the wrapper entirely
+  // when everything is zero. Mirrors starship's `[git_status]` shape:
+  //   ~modified  ?untracked  +staged  ✘deleted  »renamed  ✖conflict  ↑ahead  ↓behind
+  // Conflicts and `behind` use the danger hue; ahead uses success/blue;
+  // everything else is the muted-yellow "look here" tone, matching the
+  // user's starship theme. The whole bracket collapses when synced & clean.
+  const statusSegments = (): { text: string; fg: RGBA | string }[] => {
+    const g: GitStatus = gitStatus();
+    const c = commits();
+    const out: { text: string; fg: RGBA | string }[] = [];
+    if (g.modified > 0) out.push({ text: `~${g.modified}`, fg: colors.warning });
+    if (g.untracked > 0) out.push({ text: `?${g.untracked}`, fg: colors.warning });
+    if (g.staged > 0) out.push({ text: `+${g.staged}`, fg: colors.warning });
+    if (g.deleted > 0) out.push({ text: `✘${g.deleted}`, fg: colors.diffRemoved });
+    if (g.renamed > 0) out.push({ text: `»${g.renamed}`, fg: colors.warning });
+    if (g.conflicted > 0) out.push({ text: `✖${g.conflicted}`, fg: colors.diffRemoved });
+    if (c.ahead > 0) out.push({ text: `↑${c.ahead}`, fg: colors.success });
+    if (c.behind > 0) out.push({ text: `↓${c.behind}`, fg: colors.commitBehind });
+    return out;
   };
   const status = () => {
     void props.rev;
@@ -153,29 +174,25 @@ function Row(props: RowProps) {
         backgroundColor={bg()}
       >
         <text fg={branchFg()} bg={bg()}>
-          {`λ-${branch()}`}
+          {` ${branch()}`}
         </text>
-        <box flexDirection="row" backgroundColor={bg()} gap={1}>
-          {/* ↑N = commits this branch added since fork,
-              ↓N = commits the host branch advanced since fork (merge
-              target moved on without us). Hidden when both 0 so the row
-              isn't cluttered for a freshly-cut branch. */}
-          <Show when={commits().ahead > 0}>
-            <text fg={colors.success} bg={bg()}>{`↑${commits().ahead}`}</text>
-          </Show>
-          <Show when={commits().behind > 0}>
-            <text fg={colors.commitBehind} bg={bg()}>{`↓${commits().behind}`}</text>
-          </Show>
-          <Show when={stats().added > 0 || stats().removed > 0}>
-            <box flexDirection="row" backgroundColor={bg()}>
-              <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
-              <text fg={branchFg()} bg={bg()}>
-                ,
-              </text>
-              <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
-            </box>
-          </Show>
-        </box>
+        {/* Starship-style status segments. Renders nothing when the working
+         *  tree is clean AND the branch is synced — the same collapse
+         *  behaviour as the user's prompt: `[git_status]` block hides on a
+         *  clean+up-to-date repo. Segments come from `gitStatus` (computed
+         *  from porcelain=v2 — see git/status.ts for the intent-to-add
+         *  reclassification trick) and `commitStats`. */}
+        <Show when={statusSegments().length > 0}>
+          <box flexDirection="row" backgroundColor={bg()} gap={1}>
+            <For each={statusSegments()}>
+              {(seg) => (
+                <text fg={seg.fg} bg={bg()}>
+                  {seg.text}
+                </text>
+              )}
+            </For>
+          </box>
+        </Show>
       </box>
     </box>
   );

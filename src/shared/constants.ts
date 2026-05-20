@@ -1,5 +1,12 @@
-export const APP_NAME = 'claude-squad-ts';
-export const APP_VERSION = '0.2.0';
+// Single source of truth for name + version is package.json. Bun's
+// bundler inlines this JSON import at build time, so the produced
+// `dist/index.js` doesn't need to read it at runtime — and `bun run dev`
+// reads it directly via the bundler-style resolver. Keeps `cs --version`
+// honest after a `pnpm version` bump without touching code.
+import pkg from '../../package.json';
+
+export const APP_NAME = pkg.name;
+export const APP_VERSION = pkg.version;
 
 // Limits mirroring the Go version
 export const MAX_INSTANCES = 10;
