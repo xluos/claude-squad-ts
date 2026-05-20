@@ -1,4 +1,5 @@
 import { defaultTextareaKeyBindings, type TextareaRenderable } from '@opentui/core';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 /** Same Enter-submits keymap as the bottom prompt input. */
@@ -52,7 +53,7 @@ export function NewInstanceRow(props: NewInstanceRowProps) {
         />
         <text fg={colors.statusLoading}> ◐</text>
       </box>
-      <text fg={colors.muted}>{'   λ-(will be created)'}</text>
+      <text fg={colors.muted}>{`   λ-${t((m) => m.list.willBeCreated)}`}</text>
     </box>
   );
 }

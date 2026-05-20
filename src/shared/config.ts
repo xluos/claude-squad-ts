@@ -32,6 +32,7 @@ export function defaultConfig(): AppConfig {
     auto_yes: false,
     daemon_poll_interval: DEFAULT_DAEMON_POLL_MS,
     branch_prefix: defaultBranchPrefix(),
+    language: 'auto',
     llm: {
       enabled: false,
       api_key: '',

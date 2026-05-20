@@ -2,6 +2,7 @@ import type { TextRenderable } from '@opentui/core';
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { PREVIEW_TICK_MS } from '../../shared/constants.js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 import { ansiToStyledText } from '../util/ansi.js';
 import { Logo } from './Logo.js';
@@ -151,20 +152,18 @@ export function Preview(props: PreviewProps) {
       }}
     >
       {err() ? (
-        <Logo caption={`Error: ${err()}`} />
+        <Logo caption={t((m) => m.preview.errorPrefix)(err() ?? '')} />
       ) : !props.instance ? (
-        <Logo caption="Press n to create a new session — N for one with a prompt" />
+        <Logo caption={t((m) => m.preview.pressNToCreate)} />
       ) : props.paused ? (
         <PausedView pane="preview" branch={props.instance?.branch} />
       ) : visibleLines().length === 0 ? (
-        <text fg={colors.muted}>(empty)</text>
+        <text fg={colors.muted}>{t((m) => m.preview.emptyCapture)}</text>
       ) : (
         <For each={visibleLines()}>{(line) => <StyledLine line={line || ' '} />}</For>
       )}
       <Show when={props.scrollMode}>
-        <text fg={colors.muted}>
-          {`-- scroll mode (offset ${props.scrollOffset}) — Esc to follow tail --`}
-        </text>
+        <text fg={colors.muted}>{t((m) => m.preview.scrollFooter)(props.scrollOffset)}</text>
       </Show>
     </box>
   );

@@ -7,11 +7,15 @@ import type { Instance } from '../session/instance.js';
 import { attachTmux } from '../session/tmux/attach.js';
 import { ensureDetachBinding } from '../session/tmux/tmux.js';
 import { loadConfig } from '../shared/config.js';
+import { resolveLang, setLang } from '../shared/i18n.js';
 import { log } from '../shared/logger.js';
 
 export interface TuiOpts {
   programOverride?: string;
   autoYes: boolean;
+  /** Optional `--lang` CLI override. Takes precedence over `config.language`;
+   *  unrecognised values are ignored and the config value wins. */
+  langOverride?: string;
 }
 
 export async function runTui(opts: TuiOpts): Promise<void> {
@@ -20,6 +24,14 @@ export async function runTui(opts: TuiOpts): Promise<void> {
     throw new Error(`cwd is not a git repository: ${repoPath}`);
   }
   const config = await loadConfig();
+  // Resolve UI language before any component mounts so the first paint is
+  // already in the right language (no English-flash then re-render).
+  // CLI `--lang` wins over config; both 'zh' | 'en' | 'auto' are accepted.
+  const langSetting =
+    opts.langOverride === 'zh' || opts.langOverride === 'en' || opts.langOverride === 'auto'
+      ? opts.langOverride
+      : config.language;
+  setLang(resolveLang(langSetting));
 
   await stopDaemon();
   if (opts.autoYes) {

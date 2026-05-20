@@ -98,6 +98,10 @@ export interface AppConfig {
   auto_yes: boolean;
   daemon_poll_interval: number;
   branch_prefix: string;
+  /** UI language. `auto` (default) reads $LANG / $LC_ALL — anything starting
+   *  with `zh` resolves to Chinese, otherwise English. Overrideable to a
+   *  concrete code if the user prefers to ignore the system locale. */
+  language?: 'en' | 'zh' | 'auto';
   profiles?: Profile[];
   llm?: LLMConfig;
 }

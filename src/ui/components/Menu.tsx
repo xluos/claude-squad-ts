@@ -65,7 +65,7 @@ export function Menu(props: MenuProps) {
               <text fg={keyColor()} attributes={1}>
                 {b.label}
               </text>
-              <text fg={descColor()}> {b.desc}</text>
+              <text fg={descColor()}> {b.desc()}</text>
             </box>
           );
         }}

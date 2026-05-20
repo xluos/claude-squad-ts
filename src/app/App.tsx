@@ -26,6 +26,7 @@ import {
   MAX_INSTANCES,
   METADATA_TICK_MS,
 } from '../shared/constants.js';
+import { t } from '../shared/i18n.js';
 import { log } from '../shared/logger.js';
 import { loadState, markHelpSeen } from '../shared/state.js';
 import { colors } from '../shared/styles.js';
@@ -248,7 +249,7 @@ export function App(props: AppProps) {
     }
     if (seq === 'n') {
       if (store.model.instances.length >= MAX_INSTANCES) {
-        store.setError(`instance limit reached (${MAX_INSTANCES})`);
+        store.setError(t((m) => m.toast.instanceLimit)(MAX_INSTANCES));
         return;
       }
       store.setPressedKey('n');
@@ -266,7 +267,7 @@ export function App(props: AppProps) {
     }
     if (seq === 'N') {
       if (store.model.instances.length >= MAX_INSTANCES) {
-        store.setError(`instance limit reached (${MAX_INSTANCES})`);
+        store.setError(t((m) => m.toast.instanceLimit)(MAX_INSTANCES));
         return;
       }
       store.setPressedKey('N');
@@ -323,7 +324,7 @@ export function App(props: AppProps) {
       // drop the user into a tmux pane running in a deleted directory.
       // Force them through `r` (resume) first.
       if (selected.isPaused()) {
-        store.setError('Instance is paused — press r to resume before opening.');
+        store.setError(t((m) => m.toast.pausedNeedResume));
         return;
       }
       // First-time attach: show the onboarding overlay; on dismiss the
@@ -390,7 +391,7 @@ export function App(props: AppProps) {
   // uses `git merge-tree`, which writes only to the object DB.
   async function openMergeFlow(index: number, inst: Instance, killAfter: boolean): Promise<void> {
     if (!inst.branch) {
-      store.setError('instance has no branch yet — cannot merge');
+      store.setError(t((m) => m.toast.noBranchYet));
       return;
     }
     try {
@@ -449,14 +450,12 @@ export function App(props: AppProps) {
         } catch (err) {
           // Surface as a separate error — the merge itself succeeded,
           // so we don't want to swallow that good outcome.
-          store.setError(`merge succeeded but cleanup failed: ${errMsg(err)}`);
+          store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
         }
       }
-      const autoMsg = autoCommitted ? ' (with auto-commit of pending changes)' : '';
-      const tailMsg = retired
-        ? ' Instance retired.'
-        : ' Agent still running — d kill / c checkout when done.';
-      store.setInfo(`Merged ${preview.sourceBranch} → ${preview.hostBranch}${autoMsg}.${tailMsg}`);
+      store.setInfo(
+        t((m) => m.toast.merged)(preview.sourceBranch, preview.hostBranch, autoCommitted, retired),
+      );
       // The host branch just moved forward by at least one merge commit, so
       // every remaining instance cut from the same fork point is now further
       // "behind". Refresh all rows so the ↓N in the list reflects reality
@@ -500,7 +499,7 @@ export function App(props: AppProps) {
     const prompt = `${agent} "请把 ${preview.sourceBranch} 分支合并到 ${preview.hostBranch} 分支，如有冲突请逐文件帮我解决并解释每处取舍。"`;
     store.closeOverlay();
     const ok = await writeClipboard(prompt).catch(() => false);
-    if (!ok) store.setError('failed to copy prompt to clipboard');
+    if (!ok) store.setError(t((m) => m.toast.clipboardCopyFailed));
   }
 
   // ===== Textarea key interception =====
@@ -560,11 +559,11 @@ export function App(props: AppProps) {
   async function submitNewName(rawName: string): Promise<void> {
     const input = rawName.trim();
     if (!input) {
-      store.setError('name required');
+      store.setError(t((m) => m.toast.nameRequired));
       return;
     }
     if (store.model.instances.some((i) => i.displayName === input)) {
-      store.setError(`instance "${input}" already exists`);
+      store.setError(t((m) => m.toast.nameExists)(input));
       return;
     }
     try {
@@ -591,7 +590,7 @@ export function App(props: AppProps) {
   async function submitPrompt(rawPrompt: string): Promise<void> {
     const text = rawPrompt.trim();
     if (!text) {
-      store.setError('prompt required');
+      store.setError(t((m) => m.toast.promptRequired));
       return;
     }
     const title = autoTitle(store.model.instances);
@@ -724,13 +723,21 @@ export function App(props: AppProps) {
     return 'default';
   });
   const inputPlaceholder = createMemo(() => {
-    if (store.model.state === APP_STATE.New) return 'Name new session (中文也可)…';
-    if (store.model.state === APP_STATE.Prompt) return 'Prompt for new session…';
-    return '? for shortcuts';
+    if (store.model.state === APP_STATE.New) return t((m) => m.placeholder.newName);
+    if (store.model.state === APP_STATE.Prompt) return t((m) => m.placeholder.prompt);
+    return '';
   });
 
   const listWidth = createMemo(() => Math.max(30, Math.floor(dims().width * 0.32)));
   const overlayWidth = createMemo(() => Math.min(64, Math.max(40, Math.floor(dims().width * 0.5))));
+  // HelpOverlay has more text per row (key column + description) and CJK
+  // glyphs take 2 cells, so reuse of `overlayWidth` (sized for short
+  // confirm/merge prompts) wraps mid-phrase. Widen it on its own track —
+  // capped so a fullscreen terminal doesn't produce a cinema-strip
+  // panel that's hard to scan.
+  const helpOverlayWidth = createMemo(() =>
+    Math.min(100, Math.max(60, Math.floor(dims().width * 0.7))),
+  );
 
   // Estimated inner content dimensions of the Preview / Diff pane. Used to
   // resize the underlying tmux session so its captured rows match what the
@@ -782,7 +789,7 @@ export function App(props: AppProps) {
             store.model.state === APP_STATE.New ? (
               <NewInstanceRow
                 index={store.model.instances.length + 1}
-                placeholder="name… (中文也可)"
+                placeholder={t((m) => m.placeholder.newName)}
                 textareaRef={(r) => {
                   nameTextareaRef = r;
                 }}
@@ -798,7 +805,7 @@ export function App(props: AppProps) {
         <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} gap={0}>
           <TabbedWindow
             active={store.model.activeTab}
-            hint="tab / shift+tab to switch"
+            hint={t((m) => m.tabs.switchHint)}
             onTabClick={(id) => store.setTab(id)}
           >
             <Switch>
@@ -998,7 +1005,7 @@ export function App(props: AppProps) {
           justifyContent="center"
           zIndex={10}
         >
-          <HelpOverlay width={overlayWidth()} onClose={() => store.closeOverlay()} />
+          <HelpOverlay width={helpOverlayWidth()} onClose={() => store.closeOverlay()} />
         </box>
       </Show>
       <Show when={store.model.state === APP_STATE.Merge && store.model.mergePreview !== null}>
@@ -1057,14 +1064,14 @@ function confirmMessage(model: ReturnType<typeof createAppStore>['model']): stri
   const action = model.confirmAction;
   if (!action) return '';
   const inst = model.instances[action.index];
-  const name = inst?.displayName || inst?.title;
+  const name = inst?.displayName || inst?.title || '';
   switch (action.kind) {
     case 'kill':
-      return `Delete instance "${name}" and its worktree?`;
+      return t((m) => m.confirm.kill)(name);
     case 'pause':
-      return `Pause "${name}"? Worktree will be removed but branch kept.`;
+      return t((m) => m.confirm.pause)(name);
     case 'push':
-      return `Push branch "${inst?.branch}" to origin and open in browser?`;
+      return t((m) => m.confirm.push)(inst?.branch ?? '');
   }
 }
 

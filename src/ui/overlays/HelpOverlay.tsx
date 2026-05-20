@@ -1,6 +1,7 @@
 import { useKeyboard } from '@opentui/solid';
 import { For } from 'solid-js';
 import { APP_NAME } from '../../shared/constants.js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 export interface HelpOverlayProps {
@@ -9,43 +10,44 @@ export interface HelpOverlayProps {
 }
 
 interface SectionDef {
-  title: string;
-  entries: [string, string][]; // [key, description]
+  title: () => string;
+  /** Each entry: [key column (raw, no i18n), () => translated description]. */
+  entries: [string, () => string][];
 }
 
-// Mirrors the Go version's three-section layout (help.go helpTypeGeneral.toContent).
-// Reflects our actual keymap (lowercase d/s, tmux prefix+d for detach, no
-// terminal tab) rather than vanilla upstream.
+// Mirrors the Go version's three-section layout. Section titles and entry
+// descriptions read from i18n so the help panel switches languages along
+// with the rest of the UI.
 const SECTIONS: SectionDef[] = [
   {
-    title: 'Managing',
+    title: () => t((m) => m.help.sections.managing),
     entries: [
-      ['n', 'Create a new session'],
-      ['N', 'Create a new session with a prompt'],
-      ['d', 'Kill (delete) the selected session'],
-      ['↑/k, ↓/j', 'Navigate between sessions'],
-      ['J / K', 'Reorder sessions down / up'],
-      ['↵ / o', 'Attach to the selected session'],
-      ['Ctrl+Q', 'Detach from an attached session (or tmux prefix + d)'],
+      ['n', () => t((m) => m.help.entries.new)],
+      ['N', () => t((m) => m.help.entries.newWithPrompt)],
+      ['d', () => t((m) => m.help.entries.kill)],
+      ['↑/k, ↓/j', () => t((m) => m.help.entries.nav)],
+      ['J / K', () => t((m) => m.help.entries.reorder)],
+      ['↵ / o', () => t((m) => m.help.entries.attach)],
+      ['Ctrl+Q', () => t((m) => m.help.entries.detach)],
     ],
   },
   {
-    title: 'Handoff',
+    title: () => t((m) => m.help.sections.handoff),
     entries: [
-      ['s', 'Commit and push branch to GitHub'],
-      ['c', 'Checkout: commit changes, pause session, copy branch to clipboard'],
-      ['r', 'Resume a paused session'],
-      ['m', 'Merge worktree branch into the host branch (agent keeps running)'],
-      ['M', 'Merge & retire — merge, then kill tmux / worktree / branch'],
+      ['s', () => t((m) => m.help.entries.push)],
+      ['c', () => t((m) => m.help.entries.checkout)],
+      ['r', () => t((m) => m.help.entries.resume)],
+      ['m', () => t((m) => m.help.entries.merge)],
+      ['M', () => t((m) => m.help.entries.mergeRetire)],
     ],
   },
   {
-    title: 'Other',
+    title: () => t((m) => m.help.sections.other),
     entries: [
-      ['tab', 'Switch between Preview and Diff tabs'],
-      ['shift+↑ / shift+↓', 'Scroll preview / diff (Esc to exit scroll)'],
-      ['?', 'Show this help'],
-      ['q / Ctrl+C', 'Quit the application'],
+      ['tab', () => t((m) => m.help.entries.switchTab)],
+      ['shift+↑ / shift+↓', () => t((m) => m.help.entries.scroll)],
+      ['?', () => t((m) => m.help.entries.help)],
+      ['q / Ctrl+C', () => t((m) => m.help.entries.quit)],
     ],
   },
 ];
@@ -70,16 +72,14 @@ export function HelpOverlay(props: HelpOverlayProps) {
         <text fg={colors.primary} attributes={3 /* BOLD | UNDERLINE */}>
           {APP_NAME}
         </text>
-        <text fg={colors.muted}>
-          Manage multiple Claude Code / aider sessions in isolated git worktrees.
-        </text>
+        <text fg={colors.muted}>{t((m) => m.help.subtitle)}</text>
       </box>
 
       <For each={SECTIONS}>
         {(section) => (
           <box flexDirection="column">
             <text fg="cyan" attributes={1}>
-              {section.title}:
+              {`${section.title()}:`}
             </text>
             <For each={section.entries}>
               {([key, desc]) => (
@@ -87,7 +87,7 @@ export function HelpOverlay(props: HelpOverlayProps) {
                   <text fg="yellow" attributes={1}>
                     {key.padEnd(18, ' ')}
                   </text>
-                  <text fg="white">{desc}</text>
+                  <text fg="white">{desc()}</text>
                 </box>
               )}
             </For>
@@ -95,7 +95,7 @@ export function HelpOverlay(props: HelpOverlayProps) {
         )}
       </For>
 
-      <text fg={colors.muted}>Press any key to close.</text>
+      <text fg={colors.muted}>{t((m) => m.help.pressAnyKey)}</text>
     </box>
   );
 }

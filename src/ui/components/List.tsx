@@ -2,6 +2,7 @@ import type { RGBA } from '@opentui/core';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
+import { t } from '../../shared/i18n.js';
 import { colors, icons } from '../../shared/styles.js';
 import { Status } from '../../shared/types.js';
 
@@ -31,11 +32,11 @@ export function InstanceList(props: InstanceListProps) {
        *  the border tops line up across the two panels. */}
       <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
         <text bg={colors.primary} fg="white" attributes={1}>
-          {' Instances '}
+          {t((m) => m.list.instancesChip)}
         </text>
         <Show when={props.autoYes}>
           <text bg={colors.warning} fg="black" attributes={1}>
-            {' auto-yes '}
+            {t((m) => m.list.autoYesChip)}
           </text>
         </Show>
       </box>
@@ -54,19 +55,19 @@ export function InstanceList(props: InstanceListProps) {
           when={props.instances.length > 0}
           fallback={
             <box paddingTop={1} flexDirection="column" gap={0}>
-              <text fg={colors.muted}>No sessions yet.</text>
+              <text fg={colors.muted}>{t((m) => m.list.noSessions)}</text>
               <text> </text>
               <box flexDirection="row">
                 <text fg="cyan">n</text>
-                <text fg={colors.muted}> name a new session</text>
+                <text fg={colors.muted}> {t((m) => m.list.hintName)}</text>
               </box>
               <box flexDirection="row">
                 <text fg="cyan">N</text>
-                <text fg={colors.muted}> start one with a prompt</text>
+                <text fg={colors.muted}> {t((m) => m.list.hintPrompt)}</text>
               </box>
               <box flexDirection="row">
                 <text fg="cyan">?</text>
-                <text fg={colors.muted}> full help</text>
+                <text fg={colors.muted}> {t((m) => m.list.hintHelp)}</text>
               </box>
             </box>
           }

@@ -1,4 +1,5 @@
 import { For } from 'solid-js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 /** ASCII logo, lifted verbatim from the Go reference's `ui/consts.go`
@@ -60,11 +61,11 @@ export function Logo(props: LogoProps) {
       <text> </text>
       <box flexDirection="row">
         <text fg={colors.accent} attributes={1}>
-          {'« TypeScript edition »'}
+          {t((m) => m.app.logoSubtitle)}
         </text>
       </box>
       <box flexDirection="row">
-        <text fg={colors.muted}>SolidJS · OpenTUI · Bun</text>
+        <text fg={colors.muted}>{t((m) => m.app.logoStack)}</text>
       </box>
       {props.caption ? (
         <>

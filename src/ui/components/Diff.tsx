@@ -1,6 +1,7 @@
 import type { RGBA } from '@opentui/core';
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 import { PausedView } from './PausedView.js';
 
@@ -83,11 +84,11 @@ export function Diff(props: DiffProps) {
       {err() ? (
         <text fg={colors.danger}>{err()}</text>
       ) : !props.instance ? (
-        <text fg={colors.muted}>Select an instance to view diff</text>
+        <text fg={colors.muted}>{t((m) => m.diff.selectToView)}</text>
       ) : props.paused ? (
         <PausedView pane="diff" branch={props.instance?.branch} />
       ) : !content() ? (
-        <text fg={colors.muted}>No changes yet</text>
+        <text fg={colors.muted}>{t((m) => m.diff.noChanges)}</text>
       ) : (
         <For each={visible()}>
           {(line) => (
@@ -98,9 +99,7 @@ export function Diff(props: DiffProps) {
         </For>
       )}
       <Show when={props.scrollMode}>
-        <text fg={colors.muted}>
-          {`-- scroll mode (offset ${props.scrollOffset}) — Esc to top --`}
-        </text>
+        <text fg={colors.muted}>{t((m) => m.diff.scrollFooter)(props.scrollOffset)}</text>
       </Show>
     </box>
   );

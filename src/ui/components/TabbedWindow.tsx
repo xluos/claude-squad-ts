@@ -1,11 +1,15 @@
 import { For, type JSX, Show } from 'solid-js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 export type TabId = 'preview' | 'diff';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'preview', label: 'Preview' },
-  { id: 'diff', label: 'Diff' },
+/** Tab labels are evaluated per-render so the active language wins. Stored
+ *  as `() => string` because i18n itself doesn't hot-swap, but the same
+ *  shape would survive a future hot-swap without code changes. */
+const TABS: { id: TabId; label: () => string }[] = [
+  { id: 'preview', label: () => t((m) => m.tabs.preview) },
+  { id: 'diff', label: () => t((m) => m.tabs.diff) },
 ];
 
 export interface TabbedWindowProps {
@@ -34,15 +38,15 @@ export function TabbedWindow(props: TabbedWindowProps) {
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2}>
         <For each={TABS}>
-          {(t) => {
-            const active = () => props.active === t.id;
+          {(tab) => {
+            const active = () => props.active === tab.id;
             return (
               <text
                 fg={active() ? colors.tabActive : colors.tabInactive}
                 attributes={active() ? 1 : 0}
-                onMouseDown={() => props.onTabClick?.(t.id)}
+                onMouseDown={() => props.onTabClick?.(tab.id)}
               >
-                {t.label}
+                {tab.label()}
               </text>
             );
           }}
@@ -54,14 +58,14 @@ export function TabbedWindow(props: TabbedWindowProps) {
       </box>
       <box flexDirection="row" gap={2}>
         <For each={TABS}>
-          {(t) => {
-            const active = () => props.active === t.id;
+          {(tab) => {
+            const active = () => props.active === tab.id;
             return (
               <text
                 fg={active() ? colors.primary : colors.muted}
-                onMouseDown={() => props.onTabClick?.(t.id)}
+                onMouseDown={() => props.onTabClick?.(tab.id)}
               >
-                {active() ? '━'.repeat(t.label.length) : ' '.repeat(t.label.length)}
+                {active() ? '━'.repeat(tab.label().length) : ' '.repeat(tab.label().length)}
               </text>
             );
           }}

@@ -1,6 +1,7 @@
 import { useKeyboard } from '@opentui/solid';
 import { For, Show } from 'solid-js';
 import type { MergePreview } from '../../app/state.js';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 export interface MergeOverlayProps {
@@ -63,9 +64,11 @@ export function MergeOverlay(props: MergeOverlayProps) {
     return colors.primary;
   };
   const headerText = () => {
-    if (props.preview.blocker) return 'Cannot merge';
-    if (props.preview.conflicts.length > 0) return 'Conflicts detected';
-    return props.preview.killAfter ? 'Ready to merge & retire' : 'Ready to merge';
+    if (props.preview.blocker) return t((m) => m.merge.headerCannot);
+    if (props.preview.conflicts.length > 0) return t((m) => m.merge.headerConflicts);
+    return props.preview.killAfter
+      ? t((m) => m.merge.headerReadyRetire)
+      : t((m) => m.merge.headerReady);
   };
 
   return (
@@ -87,15 +90,15 @@ export function MergeOverlay(props: MergeOverlayProps) {
 
       <box flexDirection="column">
         <box flexDirection="row">
-          <text fg={colors.muted}>{'from  '}</text>
+          <text fg={colors.muted}>{t((m) => m.merge.fromLabel)}</text>
           <text fg="cyan" attributes={1}>
-            {props.preview.sourceBranch || '(unknown)'}
+            {props.preview.sourceBranch || t((m) => m.merge.unknownBranch)}
           </text>
         </box>
         <box flexDirection="row">
-          <text fg={colors.muted}>{'into  '}</text>
+          <text fg={colors.muted}>{t((m) => m.merge.intoLabel)}</text>
           <text fg="cyan" attributes={1}>
-            {props.preview.hostBranch || '(detached HEAD)'}
+            {props.preview.hostBranch || t((m) => m.merge.detachedHead)}
           </text>
         </box>
       </box>
@@ -106,42 +109,40 @@ export function MergeOverlay(props: MergeOverlayProps) {
 
       <Show when={props.preview.conflicts.length > 0}>
         <box flexDirection="column">
-          <text fg={colors.warning}>Conflicting files:</text>
+          <text fg={colors.warning}>{t((m) => m.merge.conflictingFiles)}</text>
           <For each={props.preview.conflicts.slice(0, 8)}>
             {(p) => <text fg="white">{`  ${p}`}</text>}
           </For>
           <Show when={props.preview.conflicts.length > 8}>
-            <text fg={colors.muted}>{`  … +${props.preview.conflicts.length - 8} more`}</text>
+            <text fg={colors.muted}>
+              {t((m) => m.merge.moreFiles)(props.preview.conflicts.length - 8)}
+            </text>
           </Show>
         </box>
       </Show>
 
       <Show when={clean() && props.preview.dirty}>
         <box flexDirection="column">
-          <text fg={colors.warning}>{'⚠ Worktree has uncommitted changes.'}</text>
-          <text fg={colors.muted}>
-            {`  Confirming will auto-commit them to ${props.preview.sourceBranch || 'the source branch'} first, then merge.`}
-          </text>
+          <text fg={colors.warning}>{t((m) => m.merge.dirtyWarn)}</text>
+          <text fg={colors.muted}>{t((m) => m.merge.dirtyDetail)(props.preview.sourceBranch)}</text>
         </box>
       </Show>
 
       <Show when={clean() && props.preview.killAfter}>
         <box flexDirection="column">
-          <text fg={colors.warning}>
-            {'⚠ Instance will be killed after merge — tmux, worktree and branch all removed.'}
-          </text>
-          <text fg={colors.muted}>
-            {'  Use [n] / Esc here if you want to keep the agent running.'}
-          </text>
+          <text fg={colors.warning}>{t((m) => m.merge.retireWarn)}</text>
+          <text fg={colors.muted}>{t((m) => m.merge.retireDetail)}</text>
         </box>
       </Show>
 
       <Show when={clean()}>
         <box flexDirection="row" gap={2}>
           <text fg={colors.success}>
-            {props.preview.killAfter ? '[Y / ↵] Merge & retire' : '[Y / ↵] Merge'}
+            {props.preview.killAfter
+              ? t((m) => m.merge.confirmRetire)
+              : t((m) => m.merge.confirmMerge)}
           </text>
-          <text fg={colors.danger}>[N / Esc] Cancel</text>
+          <text fg={colors.danger}>{t((m) => m.merge.cancel)}</text>
         </box>
       </Show>
 
@@ -151,23 +152,23 @@ export function MergeOverlay(props: MergeOverlayProps) {
             <text fg="cyan" attributes={1}>
               [c]
             </text>
-            <text>Checkout — pause this session and copy branch name</text>
+            <text>{t((m) => m.merge.checkoutOption)}</text>
           </box>
           <box flexDirection="row" gap={2}>
             <text fg="cyan" attributes={1}>
               [p]
             </text>
-            <text>{`Copy agent prompt (${agentLabel(props.preview.program)})`}</text>
+            <text>{t((m) => m.merge.copyPrompt)(agentLabel(props.preview.program))}</text>
           </box>
           <box flexDirection="row" gap={2}>
             <text fg={colors.muted}>[esc]</text>
-            <text fg={colors.muted}>Close</text>
+            <text fg={colors.muted}>{t((m) => m.merge.closeHint)}</text>
           </box>
         </box>
       </Show>
 
       <Show when={props.preview.blocker}>
-        <text fg={colors.muted}>Press Esc to close.</text>
+        <text fg={colors.muted}>{t((m) => m.merge.pressEsc)}</text>
       </Show>
     </box>
   );

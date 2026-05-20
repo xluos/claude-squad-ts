@@ -1,4 +1,5 @@
 import { useKeyboard } from '@opentui/solid';
+import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 export interface ConfirmationOverlayProps {
@@ -34,8 +35,8 @@ export function ConfirmationOverlay(props: ConfirmationOverlayProps) {
     >
       <text>{props.message}</text>
       <box flexDirection="row" gap={2} paddingTop={1}>
-        <text fg={colors.success}>[Y] Yes</text>
-        <text fg={colors.danger}>[N] No</text>
+        <text fg={colors.success}>{t((m) => m.confirm.yes)}</text>
+        <text fg={colors.danger}>{t((m) => m.confirm.no)}</text>
       </box>
     </box>
   );

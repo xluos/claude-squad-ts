@@ -57,9 +57,14 @@ async function runMain(): Promise<void> {
   program
     .option('-p, --program <command>', 'program to run (overrides config)')
     .option('-y, --autoyes', 'auto-accept agent prompts', false)
-    .action(async (opts: { program?: string; autoyes?: boolean }) => {
+    .option('--lang <code>', 'UI language: zh | en | auto (overrides config)')
+    .action(async (opts: { program?: string; autoyes?: boolean; lang?: string }) => {
       try {
-        await runTui({ programOverride: opts.program, autoYes: opts.autoyes ?? false });
+        await runTui({
+          programOverride: opts.program,
+          autoYes: opts.autoyes ?? false,
+          langOverride: opts.lang,
+        });
       } catch (err) {
         log.error('tui failed', err);
         process.stderr.write(`${formatErr(err)}\n`);
