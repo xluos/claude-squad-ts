@@ -223,6 +223,16 @@ export class Instance {
   }
 
   /**
+   * Branch the worktree was forked from at creation time. Empty when the
+   * worktree predates the `base_branch_name` field (legacy state.json) or
+   * when host was in detached HEAD when this instance was created — the
+   * UI hides the "based on …" chip in that case.
+   */
+  baseBranch(): string {
+    return this.worktree?.data.base_branch_name ?? '';
+  }
+
+  /**
    * Start the instance.
    * @param firstTime  true when called from the new-instance flow (creates a fresh worktree).
    *                   false when restoring from persisted state.

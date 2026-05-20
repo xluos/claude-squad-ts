@@ -101,3 +101,40 @@ export async function remoteBranchExists(repoPath: string, branch: string): Prom
   const r = await runGit(['-C', repoPath, 'show-ref', '--verify', `refs/remotes/origin/${branch}`]);
   return r.code === 0;
 }
+
+/**
+ * Best-effort recovery of the fork-point branch for a worktree whose
+ * persisted data predates `base_branch_name`. Asks git which local
+ * branches contain the recorded base SHA, drops the worktree's own
+ * branch + any sibling claude-squad branches, then prefers the
+ * conventional trunks (master/main, then develop/dev) before falling
+ * back to whatever's left. Returns an empty string when nothing
+ * plausible remains — caller treats that as "unknown, leave blank".
+ */
+export async function guessBaseBranch(
+  repoPath: string,
+  baseSha: string,
+  excludeBranch: string,
+  branchPrefix: string,
+): Promise<string> {
+  if (!baseSha) return '';
+  const r = await runGit([
+    '-C',
+    repoPath,
+    'branch',
+    '--format=%(refname:short)',
+    '--contains',
+    baseSha,
+  ]);
+  if (r.code !== 0) return '';
+  const candidates = r.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && l !== excludeBranch && !l.startsWith(branchPrefix));
+  if (candidates.length === 0) return '';
+  const preferred = ['master', 'main', 'develop', 'dev'];
+  for (const p of preferred) {
+    if (candidates.includes(p)) return p;
+  }
+  return candidates[0] ?? '';
+}

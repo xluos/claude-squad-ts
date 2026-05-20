@@ -175,6 +175,11 @@ const EN = {
     sendNotRunning: 'session is not running — resume it first',
     sendEmpty: 'nothing to send',
     sendFailed: (err: string) => `failed to send: ${err}`,
+    syncedFromHost: (host: string) => `Synced ${host} → worktree.`,
+    syncBlocked: (reason: string) => `cannot sync: ${reason}`,
+    syncConflicts: (host: string, n: number) =>
+      `cannot sync ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
+    syncFailed: (err: string) => `sync failed: ${err}`,
   },
   menu: {
     new: 'new',
@@ -183,6 +188,7 @@ const EN = {
     submitPR: 'submit PR',
     checkout: 'checkout',
     merge: 'merge',
+    sync: 'sync',
     switchTab: 'switch tab',
     quit: 'quit',
     help: 'help',
@@ -351,6 +357,10 @@ const ZH: Messages = {
     sendNotRunning: '会话未运行 —— 请先 r 恢复',
     sendEmpty: '没有要发送的内容',
     sendFailed: (err: string) => `发送失败: ${err}`,
+    syncedFromHost: (host: string) => `已同步 ${host} → 工作树。`,
+    syncBlocked: (reason: string) => `无法同步: ${reason}`,
+    syncConflicts: (host: string, n: number) => `无法同步 ${host}: ${n} 个文件会冲突`,
+    syncFailed: (err: string) => `同步失败: ${err}`,
   },
   menu: {
     new: '新建',
@@ -359,6 +369,7 @@ const ZH: Messages = {
     submitPR: '提 PR',
     checkout: '切出',
     merge: '合并',
+    sync: '同步',
     switchTab: '切 tab',
     quit: '退出',
     help: '帮助',

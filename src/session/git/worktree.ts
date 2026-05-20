@@ -10,6 +10,7 @@ import {
   ensureGhAuthed,
   findRepoRoot,
   getHeadSha,
+  getHostBranch,
   localBranchExists,
   remoteBranchExists,
   sanitizeBranchName,
@@ -52,6 +53,10 @@ export interface Worktree {
 export async function createWorktree(init: WorktreeInit): Promise<Worktree> {
   const repoPath = await findRepoRoot(init.repoPath);
   const branchName = `${init.branchPrefix}${sanitizeBranchName(init.sessionName)}`;
+  // Snapshot the host's branch at creation time so the Diff "based on …"
+  // chip and reverse-sync source stay pinned to the fork point — even if
+  // host later checks out a different branch.
+  const baseBranch = (await getHostBranch(repoPath)) ?? '';
   return buildWorktree({
     repo_path: repoPath,
     worktree_path: makeWorktreePath(init.sessionName),
@@ -59,6 +64,7 @@ export async function createWorktree(init: WorktreeInit): Promise<Worktree> {
     branch_name: branchName,
     base_commit_sha: '',
     is_existing_branch: false,
+    base_branch_name: baseBranch,
   });
 }
 
@@ -75,6 +81,7 @@ export async function createWorktreeFromBranch(
     branch_name: branchName,
     base_commit_sha: '',
     is_existing_branch: true,
+    base_branch_name: branchName,
   });
 }
 

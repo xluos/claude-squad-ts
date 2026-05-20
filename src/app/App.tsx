@@ -12,8 +12,13 @@ import {
   Show,
   Switch,
 } from 'solid-js';
-import { mergeIntoHost, precheckMerge } from '../session/git/merge.js';
-import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
+import {
+  mergeIntoHost,
+  precheckMerge,
+  precheckSyncFromHost,
+  syncFromHost,
+} from '../session/git/merge.js';
+import { fetchPrune, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
 import { createStorage } from '../session/storage.js';
 import { writeClipboard } from '../shared/clipboard.js';
@@ -94,12 +99,6 @@ export function App(props: AppProps) {
   let textareaRef: TextareaRenderable | undefined;
   let nameTextareaRef: TextareaRenderable | undefined;
   const [inputValue, setInputValue] = createSignal('');
-  // Host repo's current branch — the prospective merge target. Surfaced
-  // on the Diff tab label so the `+N -M` next to it is legible at a
-  // glance ("changed this much relative to <hostBranch>"). Refreshed by
-  // the metadata tick so checking out a different host branch is
-  // reflected without a relaunch. Null = detached HEAD or unborn repo.
-  const [hostBranch, setHostBranch] = createSignal<string | null>(null);
 
   // ===== Persistence: restore + save =====
   //
@@ -198,14 +197,6 @@ export function App(props: AppProps) {
           } catch {
             // ignore transient git errors
           }
-        }
-        // Host branch is per-repo (not per-instance), so refresh once per tick
-        // outside the loop. Tracked via its own signal — no rev bump needed.
-        try {
-          const cur = await getHostBranch(props.repoPath);
-          if (cur !== hostBranch()) setHostBranch(cur);
-        } catch {
-          // ignore
         }
         if (dirty) store.bumpRev();
       })();
@@ -426,6 +417,14 @@ export function App(props: AppProps) {
       void openMergeFlow(store.model.selected, selected, true);
       return;
     }
+    if (seq === 'u') {
+      // u = sync host's current branch *down* into the worktree. No
+      // overlay — precheck via merge-tree, fold in cleanly or toast why
+      // we couldn't. Symmetric counterpart to `m` (merge up to host).
+      store.setPressedKey('u');
+      void runSyncFromHost(selected);
+      return;
+    }
   });
 
   // ===== Merge =====
@@ -511,6 +510,49 @@ export function App(props: AppProps) {
       }
     } catch (err) {
       store.setError(errMsg(err));
+    }
+  }
+
+  // ===== Sync from host =====
+  // Reverse direction of the merge flow: fold the *instance's base branch*
+  // back down into the worktree so the agent picks up infra/base changes
+  // landed since the fork. Source is the pinned base branch, not host's
+  // current HEAD — if host has since switched branches, that's irrelevant
+  // to this task. No overlay: precheck (read-only, via merge-tree) decides
+  // whether to just do it or toast why we couldn't.
+  async function runSyncFromHost(inst: Instance): Promise<void> {
+    if (!inst.branch) {
+      store.setError(t((m) => m.toast.noBranchYet));
+      return;
+    }
+    const worktreePath = inst.worktreePath();
+    if (!worktreePath) {
+      store.setError(t((m) => m.toast.pausedNeedResume));
+      return;
+    }
+    const baseBranch = inst.baseBranch();
+    if (!baseBranch) {
+      store.setError(t((m) => m.toast.syncBlocked)('no base branch recorded for this instance'));
+      return;
+    }
+    try {
+      const pre = await precheckSyncFromHost(worktreePath, baseBranch);
+      if (pre.blocker) {
+        store.setError(t((m) => m.toast.syncBlocked)(pre.blocker));
+        return;
+      }
+      if (pre.conflicts.length > 0) {
+        store.setError(t((m) => m.toast.syncConflicts)(baseBranch, pre.conflicts.length));
+        return;
+      }
+      await syncFromHost(worktreePath, baseBranch);
+      // Refresh commit stats so the ↑↓ chip reflects the new state
+      // before the next metadata tick runs.
+      await inst.computeCommitStats().catch(() => undefined);
+      store.bumpRev();
+      store.setInfo(t((m) => m.toast.syncedFromHost)(baseBranch));
+    } catch (err) {
+      store.setError(t((m) => m.toast.syncFailed)(errMsg(err)));
     }
   }
 
@@ -885,7 +927,7 @@ export function App(props: AppProps) {
             active={store.model.activeTab}
             hint={t((m) => m.tabs.switchHint)}
             diffStats={selectedDiff()}
-            baseBranch={hostBranch() ?? undefined}
+            baseBranch={selectedInstance()?.baseBranch() || undefined}
             onTabClick={(id) => store.setTab(id)}
           >
             <Switch>

@@ -111,3 +111,108 @@ export async function mergeIntoHost(hostPath: string, sourceBranch: string): Pro
     throw new Error((r.stderr || r.stdout).trim() || `git merge ${sourceBranch} failed`);
   }
 }
+
+/**
+ * Mirror of `precheckMerge` for the reverse direction: ask whether merging
+ * the host's current branch *down into the worktree* would succeed cleanly.
+ * Uses `git merge-tree` so neither the worktree files nor its index are
+ * touched. The caller decides what to do with conflicts — for the sync flow
+ * we just toast and bail instead of opening a resolution overlay.
+ */
+export async function precheckSyncFromHost(
+  worktreePath: string,
+  hostBranch: string,
+): Promise<MergePrecheck> {
+  const branchR = await runGit(['-C', worktreePath, 'branch', '--show-current']);
+  const worktreeBranch = branchR.stdout.trim();
+  if (!worktreeBranch) {
+    return {
+      clean: false,
+      hostBranch: worktreeBranch,
+      conflicts: [],
+      blocker: 'worktree is in detached HEAD — cannot sync',
+    };
+  }
+
+  // Dirty worktree → refuse. Unlike the worktree→host direction we can't
+  // auto-commit here, because the agent may be mid-edit; merging on top
+  // of half-written files is worse than telling the user to wait.
+  const statusR = await runGit(['-C', worktreePath, 'status', '--porcelain']);
+  if (statusR.code === 0 && statusR.stdout.trim().length > 0) {
+    return {
+      clean: false,
+      hostBranch: worktreeBranch,
+      conflicts: [],
+      blocker: 'worktree has uncommitted changes — let the agent settle first',
+    };
+  }
+
+  if (worktreeBranch === hostBranch) {
+    return {
+      clean: false,
+      hostBranch: worktreeBranch,
+      conflicts: [],
+      blocker: `worktree is already on "${hostBranch}" — nothing to sync`,
+    };
+  }
+
+  const refR = await runGit(['-C', worktreePath, 'rev-parse', '--verify', hostBranch]);
+  if (refR.code !== 0) {
+    return {
+      clean: false,
+      hostBranch: worktreeBranch,
+      conflicts: [],
+      blocker: `branch "${hostBranch}" not found from worktree`,
+    };
+  }
+
+  const mtR = await runGit([
+    '-C',
+    worktreePath,
+    'merge-tree',
+    '--name-only',
+    '--no-messages',
+    'HEAD',
+    hostBranch,
+  ]);
+
+  const conflicts = mtR.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^[0-9a-f]{40,}$/.test(l));
+
+  if (mtR.code === 0 && conflicts.length === 0) {
+    return { clean: true, hostBranch: worktreeBranch, conflicts: [] };
+  }
+  if (conflicts.length === 0) {
+    return {
+      clean: false,
+      hostBranch: worktreeBranch,
+      conflicts: [],
+      blocker: (mtR.stderr || mtR.stdout).trim() || 'sync precheck failed',
+    };
+  }
+  return { clean: false, hostBranch: worktreeBranch, conflicts };
+}
+
+/**
+ * Actually fold `hostBranch` into the worktree's current branch. FF when
+ * possible (less noise than the host-direction merge); on any failure
+ * we run `merge --abort` so the worktree doesn't get stuck in MERGING —
+ * the TUI offers no resolution UI, so a half-merged worktree is worse
+ * than no merge at all.
+ */
+export async function syncFromHost(worktreePath: string, hostBranch: string): Promise<void> {
+  const r = await runGit([
+    '-C',
+    worktreePath,
+    'merge',
+    '-m',
+    `[claudesquad] sync ${hostBranch}`,
+    hostBranch,
+  ]);
+  if (r.code !== 0) {
+    await runGit(['-C', worktreePath, 'merge', '--abort']);
+    throw new Error((r.stderr || r.stdout).trim() || `git merge ${hostBranch} failed`);
+  }
+}

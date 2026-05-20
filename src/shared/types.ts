@@ -48,6 +48,13 @@ export interface WorktreeData {
   branch_name: string;
   base_commit_sha: string;
   is_existing_branch: boolean;
+  /**
+   * Branch the worktree was forked from at creation time. Used by the
+   * Diff tab's "based on …" chip and as the reverse-sync source. Optional
+   * because state.json from older versions doesn't carry it — UI hides
+   * the chip when missing.
+   */
+  base_branch_name?: string;
 }
 
 export interface InstanceData {

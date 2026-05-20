@@ -23,9 +23,10 @@ export interface TabbedWindowProps {
    *  `+N -M` to the left of the hint — hidden when both sides are 0,
    *  so a clean tree leaves the slot empty. */
   diffStats?: DiffStats;
-  /** Host repo's current branch — shown immediately left of `diffStats`
-   *  as the "based on …" label. Same visibility gating as diffStats:
-   *  only when there's a non-zero diff and a branch name is known. */
+  /** Branch the selected instance's worktree was forked from — shown
+   *  immediately left of `diffStats` as the "based on …" label. Same
+   *  visibility gating as diffStats: only when there's a non-zero diff
+   *  and a branch name is known. */
   baseBranch?: string;
   /** Click handler on a tab label or its underline indicator. */
   onTabClick?: (id: TabId) => void;
