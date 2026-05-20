@@ -5,6 +5,10 @@
 [![npm version](https://img.shields.io/npm/v/claude-squad-ts.svg)](https://www.npmjs.com/package/claude-squad-ts)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**English** | [简体中文](./README.zh-CN.md)
+
+---
+
 This project is a **direct port** of the original Go + bubbletea implementation. The session model, on-disk state, and command surface are kept compatible — but the TUI is rebuilt on a stack that's actually friendly to CJK users.
 
 ## Why a rewrite
