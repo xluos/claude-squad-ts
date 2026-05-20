@@ -172,6 +172,14 @@ export function App(props: AppProps) {
           } catch {
             // ignore transient git errors
           }
+          try {
+            const prev = `${inst.commitStats.ahead}|${inst.commitStats.behind}`;
+            await inst.computeCommitStats();
+            const next = `${inst.commitStats.ahead}|${inst.commitStats.behind}`;
+            if (prev !== next) dirty = true;
+          } catch {
+            // ignore transient git errors
+          }
         }
         if (dirty) store.bumpRev();
       })();
@@ -449,6 +457,16 @@ export function App(props: AppProps) {
         ? ' Instance retired.'
         : ' Agent still running — d kill / c checkout when done.';
       store.setInfo(`Merged ${preview.sourceBranch} → ${preview.hostBranch}${autoMsg}.${tailMsg}`);
+      // The host branch just moved forward by at least one merge commit, so
+      // every remaining instance cut from the same fork point is now further
+      // "behind". Refresh all rows so the ↓N in the list reflects reality
+      // before the next metadata tick runs.
+      if (!retired) {
+        await Promise.all(
+          store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
+        );
+        store.bumpRev();
+      }
     } catch (err) {
       store.setError(errMsg(err));
     }

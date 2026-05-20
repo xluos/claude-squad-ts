@@ -4,6 +4,7 @@ import { log } from '../shared/logger.js';
 import { type DiffStats, type InstanceData, type LLMConfig, Status } from '../shared/types.js';
 import { hasInitialCommit, isGitRepo } from './git/util.js';
 import {
+  type CommitCounts,
   createWorktree,
   createWorktreeFromBranch,
   type Worktree,
@@ -50,6 +51,9 @@ export class Instance {
   prompt: string;
   selectedBranch: string;
   diffStats: DiffStats;
+  /** Commit divergence vs the host repo's current branch since the worktree
+   *  was cut. Refreshed by the periodic metadata loop and after merges. */
+  commitStats: CommitCounts = { ahead: 0, behind: 0 };
 
   private started = false;
   private tmux: TmuxSession | null = null;
@@ -353,6 +357,13 @@ export class Instance {
     if (!this.worktree) return { added: 0, removed: 0 };
     const stats = await this.worktree.diffNumstat();
     this.diffStats = { ...this.diffStats, added: stats.added, removed: stats.removed };
+    return stats;
+  }
+
+  async computeCommitStats(): Promise<CommitCounts> {
+    if (!this.worktree) return { ahead: 0, behind: 0 };
+    const stats = await this.worktree.commitCounts();
+    this.commitStats = stats;
     return stats;
   }
 

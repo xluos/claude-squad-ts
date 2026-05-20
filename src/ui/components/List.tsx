@@ -75,7 +75,6 @@ export function InstanceList(props: InstanceListProps) {
             {(inst, idx) => (
               <Row
                 instance={inst}
-                index={idx() + 1}
                 selected={idx() === props.selectedIndex}
                 rev={props.rev}
                 onClick={() => props.onSelect?.(idx())}
@@ -93,7 +92,6 @@ export function InstanceList(props: InstanceListProps) {
 
 interface RowProps {
   instance: Instance;
-  index: number;
   selected: boolean;
   rev: number;
   onClick?: () => void;
@@ -115,6 +113,10 @@ function Row(props: RowProps) {
     void props.rev;
     return props.instance.diffStats;
   };
+  const commits = () => {
+    void props.rev;
+    return props.instance.commitStats;
+  };
   const status = () => {
     void props.rev;
     return props.instance.status;
@@ -125,7 +127,6 @@ function Row(props: RowProps) {
   // it like before.
   const bg = () => (props.selected ? colors.selectedBg : undefined);
   const titleFg = () => (props.selected ? colors.selectedFg : 'white');
-  const indexFg = () => (props.selected ? colors.selectedFg : colors.muted);
   const branchFg = () => (props.selected ? colors.selectedBranch : colors.muted);
 
   return (
@@ -137,31 +138,43 @@ function Row(props: RowProps) {
       onMouseDown={() => props.onClick?.()}
     >
       <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
-        <box flexDirection="row" backgroundColor={bg()}>
-          <text fg={indexFg()} bg={bg()}>
-            {`${props.index}. `}
-          </text>
-          <text fg={titleFg()} attributes={props.selected ? 1 : 0} bg={bg()}>
-            {displayName()}
-          </text>
-        </box>
+        <text fg={titleFg()} attributes={props.selected ? 1 : 0} bg={bg()}>
+          {displayName()}
+        </text>
         <text fg={iconColorFor(status())} bg={bg()}>
           {iconFor(status())}
         </text>
       </box>
-      <box flexDirection="row" justifyContent="space-between" backgroundColor={bg()}>
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        backgroundColor={bg()}
+      >
         <text fg={branchFg()} bg={bg()}>
-          {`   λ-${branch()}`}
+          {`λ-${branch()}`}
         </text>
-        <Show when={stats().added > 0 || stats().removed > 0}>
-          <box flexDirection="row" backgroundColor={bg()}>
-            <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
-            <text fg={branchFg()} bg={bg()}>
-              ,
-            </text>
-            <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
-          </box>
-        </Show>
+        <box flexDirection="row" backgroundColor={bg()} gap={1}>
+          {/* ↑N = commits this branch added since fork,
+              ↓N = commits the host branch advanced since fork (merge
+              target moved on without us). Hidden when both 0 so the row
+              isn't cluttered for a freshly-cut branch. */}
+          <Show when={commits().ahead > 0}>
+            <text fg={colors.success} bg={bg()}>{`↑${commits().ahead}`}</text>
+          </Show>
+          <Show when={commits().behind > 0}>
+            <text fg={colors.commitBehind} bg={bg()}>{`↓${commits().behind}`}</text>
+          </Show>
+          <Show when={stats().added > 0 || stats().removed > 0}>
+            <box flexDirection="row" backgroundColor={bg()}>
+              <text fg={colors.diffAdded} bg={bg()}>{`+${stats().added}`}</text>
+              <text fg={branchFg()} bg={bg()}>
+                ,
+              </text>
+              <text fg={colors.diffRemoved} bg={bg()}>{`-${stats().removed}`}</text>
+            </box>
+          </Show>
+        </box>
       </box>
     </box>
   );

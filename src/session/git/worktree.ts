@@ -20,6 +20,17 @@ export interface WorktreeInit {
   branchPrefix: string;
 }
 
+/** Commit divergence between the worktree branch and the host repo's
+ *  currently checked-out branch (the prospective merge target). */
+export interface CommitCounts {
+  /** Commits on the worktree branch not yet on host HEAD — i.e. work
+   *  that still needs to be merged. Drops to 0 once a merge lands. */
+  ahead: number;
+  /** Commits on host HEAD not on the worktree branch — host moved
+   *  forward (other merges, direct commits, ...) without us. */
+  behind: number;
+}
+
 export interface Worktree {
   data: WorktreeData;
   setup(): Promise<void>;
@@ -28,6 +39,7 @@ export interface Worktree {
   prune(): Promise<void>;
   diff(): Promise<DiffStats>;
   diffNumstat(): Promise<DiffStats>;
+  commitCounts(): Promise<CommitCounts>;
   isDirty(): Promise<boolean>;
   isValid(): Promise<boolean>;
   isBranchCheckedOut(): Promise<boolean>;
@@ -169,6 +181,28 @@ function buildWorktree(data: WorktreeData): Worktree {
 
     diffNumstat(): Promise<DiffStats> {
       return computeDiffNumstat(data.worktree_path, data.base_commit_sha);
+    },
+
+    async commitCounts(): Promise<CommitCounts> {
+      // Compare the worktree branch against the host repo's current HEAD
+      // directly (not against the recorded fork point) — that way `ahead`
+      // actually drops once a merge folds the branch into host, and
+      // `behind` reflects whatever the host moved on to.
+      //
+      //   ahead  = HEAD..branch_name  (commits on branch, not yet on host)
+      //   behind = branch_name..HEAD  (commits on host, not on branch)
+      //
+      // `git -C repo_path` runs in the outer clone, where HEAD = the
+      // prospective merge target. If branch_name was deleted (e.g. the
+      // instance was retired), rev-list fails → both return 0, which is
+      // the sensible "nothing to show" answer.
+      const [aheadR, behindR] = await Promise.all([
+        runGit(['-C', data.repo_path, 'rev-list', '--count', `HEAD..${data.branch_name}`]),
+        runGit(['-C', data.repo_path, 'rev-list', '--count', `${data.branch_name}..HEAD`]),
+      ]);
+      const ahead = aheadR.code === 0 ? Number(aheadR.stdout.trim()) || 0 : 0;
+      const behind = behindR.code === 0 ? Number(behindR.stdout.trim()) || 0 : 0;
+      return { ahead, behind };
     },
 
     async isDirty(): Promise<boolean> {
