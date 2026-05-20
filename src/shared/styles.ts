@@ -56,7 +56,7 @@ export const colors = {
   // the "warning, look here" hue. Doesn't repurpose `warning` (which is
   // also the loading status / prompt cue) so this swap is local to the
   // list's commit-behind glyph.
-  commitBehind: '#ecab0c',
+  commitBehind: '#FFBE00',
 
   // Selected-row block. Pale lavender — same hue family as `primary` but
   // light enough for dark text to sit on it cleanly. Slightly deeper than
