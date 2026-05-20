@@ -3,6 +3,13 @@
 # to .tsx files before they hit the runtime.
 preload = ["@opentui/solid/preload"]
 
+[install]
+# Pin to the public npm registry. Without this, bun.lock can end up
+# referencing whatever registry the host's global ~/.npmrc points at
+# (e.g. an internal corporate mirror), which is not what we want for an
+# open-source repo published on GitHub.
+registry = "https://registry.npmjs.org/"
+
 [test]
 # Scope test discovery so node_modules tests don't get picked up.
 root = "test"

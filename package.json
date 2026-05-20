@@ -3,6 +3,32 @@
   "version": "0.2.0",
   "description": "TypeScript rewrite of claude-squad — manage multiple Claude/Aider sessions over git worktrees + tmux. Built on SolidJS + OpenTUI for native IME / CJK support.",
   "type": "module",
+  "license": "MIT",
+  "author": "Shuaiwu Xu <shuaiwuxu@gmail.com> (https://github.com/xluos)",
+  "homepage": "https://github.com/xluos/claude-squad-ts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xluos/claude-squad-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xluos/claude-squad-ts/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-squad",
+    "tmux",
+    "git-worktree",
+    "tui",
+    "terminal",
+    "ai-agent",
+    "codex",
+    "aider",
+    "gemini",
+    "opentui",
+    "solidjs",
+    "bun"
+  ],
   "bin": {
     "cs": "./dist/cli/index.js",
     "claude-squad-ts": "./dist/cli/index.js"
