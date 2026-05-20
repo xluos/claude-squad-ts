@@ -29,6 +29,7 @@ const SECTIONS: SectionDef[] = [
       ['J / K', () => t((m) => m.help.entries.reorder)],
       ['↵ / o', () => t((m) => m.help.entries.attach)],
       ['Ctrl+Q', () => t((m) => m.help.entries.detach)],
+      ['i', () => t((m) => m.help.entries.send)],
     ],
   },
   {
@@ -39,6 +40,7 @@ const SECTIONS: SectionDef[] = [
       ['r', () => t((m) => m.help.entries.resume)],
       ['m', () => t((m) => m.help.entries.merge)],
       ['M', () => t((m) => m.help.entries.mergeRetire)],
+      ['u', () => t((m) => m.help.entries.sync)],
     ],
   },
   {

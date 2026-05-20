@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, on, onCleanup } from 'solid-js';
 import { MENU_KEY_HIGHLIGHT_MS } from '../../shared/constants.js';
 import {
   DEFAULT_BINDINGS,
+  EMPTY_BINDINGS,
   type KeyBinding,
   NEW_INSTANCE_BINDINGS,
   PAUSED_BINDINGS,
@@ -42,6 +43,8 @@ export function Menu(props: MenuProps) {
         return SEND_BINDINGS;
       case 'paused':
         return PAUSED_BINDINGS;
+      case 'empty':
+        return EMPTY_BINDINGS;
       default:
         return DEFAULT_BINDINGS;
     }
