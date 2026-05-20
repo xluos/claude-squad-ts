@@ -30,14 +30,19 @@
     "bun"
   ],
   "bin": {
-    "cs": "./dist/cli/index.js",
-    "claude-squad-ts": "./dist/cli/index.js"
+    "cs": "./dist/index.js",
+    "claude-squad-ts": "./dist/index.js"
   },
-  "main": "./dist/cli/index.js",
+  "main": "./dist/index.js",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "dev": "bun run src/cli/index.ts",
     "dev:tui": "bun run src/cli/index.ts",
-    "build": "bun build src/cli/index.ts --target=bun --outdir=dist --minify --sourcemap",
+    "build": "bun run scripts/build.ts",
+    "prepublishOnly": "rm -rf dist && bun run build",
     "start": "bun run dist/cli/index.js",
     "check": "tsc --noEmit && biome check src",
     "typecheck": "tsc --noEmit",
