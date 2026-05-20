@@ -15,8 +15,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write   # required for npm provenance attestation
+      # `contents: write` is needed by softprops/action-gh-release to
+      # create the GitHub release. `id-token: write` is what mints the
+      # OIDC token npm uses for trusted-publisher auth + provenance.
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
