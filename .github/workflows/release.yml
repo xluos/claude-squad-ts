@@ -2,8 +2,10 @@ name: Release to npm
 
 # Fires when a `vX.Y.Z` tag is pushed (e.g. `git tag v0.2.0 && git push --tags`).
 # Builds the dist bundle in a clean Ubuntu runner and publishes to the public
-# npm registry using the NPM_TOKEN repo secret. Decouples publishing from any
-# individual contributor's local npm auth state.
+# npm registry via the package's Trusted Publisher configuration on npmjs.com
+# — no long-lived NPM_TOKEN. GitHub mints a short-lived OIDC token at run
+# time, npm verifies the configured (repo, workflow) pair, and the published
+# artifact carries a provenance attestation users can verify.
 on:
   push:
     tags:
@@ -44,9 +46,10 @@ jobs:
         run: bun run build
 
       - name: Publish to npm
+        # Auth is OIDC via the package's Trusted Publisher entry (no
+        # NODE_AUTH_TOKEN). `--provenance` is what triggers the OIDC
+        # exchange with npm and emits the signed attestation.
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
