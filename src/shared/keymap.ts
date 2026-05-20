@@ -71,14 +71,7 @@ export const PROMPT_BINDINGS: KeyBinding[] = [
   { key: KeyName.Cancel, label: 'esc', desc: 'cancel' },
 ];
 
-// Full help screen — superset of default plus secondary bindings.
-export const HELP_BINDINGS: KeyBinding[] = [
-  ...DEFAULT_BINDINGS,
-  { key: KeyName.Prompt, label: 'N', desc: 'new with prompt' },
-  { key: KeyName.Resume, label: 'r', desc: 'resume paused' },
-  { key: KeyName.Merge, label: 'M', desc: 'merge & retire (kill after)' },
-  { key: KeyName.MoveUp, label: 'K', desc: 'reorder up' },
-  { key: KeyName.MoveDown, label: 'J', desc: 'reorder down' },
-  { key: KeyName.ShiftUp, label: 'shift+↑', desc: 'scroll preview/diff' },
-  { key: KeyName.ShiftDown, label: 'shift+↓', desc: 'scroll preview/diff' },
-];
+// Full help screen's content lives in src/ui/overlays/HelpOverlay.tsx
+// (sections + descriptions). A KeyBinding[] mirror used to live here but
+// nothing imported it — keeping two sources of truth invariably drifted,
+// so the help overlay is the only authoritative version.

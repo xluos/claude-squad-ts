@@ -35,6 +35,8 @@ const SECTIONS: SectionDef[] = [
       ['s', 'Commit and push branch to GitHub'],
       ['c', 'Checkout: commit changes, pause session, copy branch to clipboard'],
       ['r', 'Resume a paused session'],
+      ['m', 'Merge worktree branch into the host branch (agent keeps running)'],
+      ['M', 'Merge & retire — merge, then kill tmux / worktree / branch'],
     ],
   },
   {
