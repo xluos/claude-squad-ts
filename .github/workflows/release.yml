@@ -26,8 +26,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # `npm publish` uses Node's npm client; bun handles install + build.
-          node-version: '22'
+          # OIDC trusted-publisher auth needs npm >= 11.5.1, which only
+          # ships with Node 22.14.0+. Pinning to Node 24 (the version the
+          # npm docs example uses) keeps us safely above that. Without
+          # this, `npm publish` signs the provenance fine but falls back
+          # to a non-OIDC publish path and the registry returns PUT 404.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Verify tag matches package.json
