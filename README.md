@@ -33,9 +33,11 @@ The original is great, but had a few friction points for CJK users and i18n in g
 - **Floating overlays + toast banners** — modals don't replace the main view anymore; they float over it with their own solid background so the list / preview stays visible. Success / error banners pop top-center and auto-dismiss
 - **Commit-divergence indicators** — list rows show `↑N` (commits ahead of host) and `↓N` (commits the host moved on without you), so you know when to rebase
 - **Capital `M` = merge & retire** — lowercase `m` merges and keeps the agent running; uppercase `M` merges and immediately cleans up tmux / worktree / branch
+- **`u` = sync from base branch** — reverse-direction merge that folds the instance's base branch down into the worktree, so long-running agents pick up infra changes other instances landed. Dry-runs via `git merge-tree` first; on conflict it just toasts the file count, no half-merged worktree to clean up
+- **Per-instance base branch chip** — the `based on …` label on the Diff tab is pinned per instance at creation time, not derived from host's current branch (so it doesn't lie after you `git checkout` in the host)
+- **Per-project state + worktree isolation** — opening claude-squad in different repos no longer shares a session list. Each repo gets its own `projects/<id>/state.json` and worktree pool. Legacy `~/.claude-squad/state.json` is migrated automatically on first launch
 - **Auto-commit on merge** — if the worktree is dirty when you merge, the overlay warns you and auto-commits the pending changes to the source branch first (matches the existing auto-commit-on-pause behavior)
 - **Help overlay reflects actual keymap** — single source of truth in `HelpOverlay.tsx` (the old dead `HELP_BINDINGS` mirror is gone)
-- **State.json schema unchanged** — you can run either binary against the same `~/.claude-squad/state.json` if you want to A/B them
 
 ## Install
 
@@ -75,8 +77,8 @@ cs                  # launch in the current git repo
 cs -p "aider"       # override the default program
 cs -y               # auto-yes mode (forwards Yes to interactive prompts)
 cs --lang zh        # force Chinese UI for this run
-cs debug            # print config paths
-cs reset            # wipe all stored instances
+cs debug            # print config paths + current project + project registry
+cs reset            # wipe all stored instances **for the current project**
 ```
 
 ### Keymap
@@ -95,6 +97,7 @@ cs reset            # wipe all stored instances
 | `r`                  | Resume a paused session                                           |
 | `m`                  | Merge worktree branch into host branch (agent keeps running)      |
 | `M`                  | Merge & retire — merge, then clean up tmux / worktree / branch    |
+| `u`                  | Sync from base branch — pull host changes down into the worktree  |
 | `tab`                | Switch between Preview and Diff tabs                              |
 | `shift+↑` / `shift+↓`| Scroll preview / diff (Esc to exit scroll mode)                   |
 | `?`                  | Show full help                                                    |
@@ -132,11 +135,29 @@ You can define multiple named programs and switch between them when creating a n
 
 When more than one profile is defined, the new-session overlay shows a profile picker you cycle with `tab`.
 
+## On-disk layout
+
+```
+~/.claude-squad/
+├── global_state.json                  # project registry + help-screens mask + migration version
+├── config.json
+├── projects/
+│   └── <sha256(repoPath)[:16]>/
+│       ├── state.json                 # this project's instances
+│       └── worktrees/                 # this project's new worktrees
+└── state.json.legacy.bak              # only present after a v0.2.3-or-earlier install was migrated
+```
+
+Project ID is `sha256(repoPath)[:16]`, where `repoPath` is the git
+worktree root (so `~/proj` vs `~/proj-other-worktree` are different
+projects, matching the cwd intuition).
+
 ## Compatibility with the Go version
 
-- **State file at `~/.claude-squad/state.json` uses the same schema** — fields, enum values, and types all match upstream. You can switch back and forth between the two binaries against the same state without conflicts.
-- **`display_name`** is the only added field — optional, used so CJK names render in the list while the underlying `title` stays kebab-case ASCII (which keeps tmux session names / git branches / file paths clean).
-- **State file fallback**: when `display_name` is missing (data written by the Go version), the UI falls back to `title`.
+- **State layout matches the upstream Go project-isolation refactor** — both the per-project `state.json` shape and `global_state.json` follow the upstream `config/global_state.go` / `session/project_storage.go` definitions, so the two binaries can read each other's state.
+- **`display_name`** is the only added instance field — optional, used so CJK names render in the list while the underlying `title` stays kebab-case ASCII (which keeps tmux session names / git branches / file paths clean).
+- **`base_branch_name`** on worktree data is also added (used by the `u` sync key and the Diff tab chip) — missing values are filled in via `git branch --contains <base_sha>` on first load, so legacy data lights up after one launch.
+- **Legacy state migration**: on first launch, an old single-file `~/.claude-squad/state.json` is split per-project into the layout above. The original file is renamed to `state.json.legacy.bak` for rollback; migration is keyed off `global_state.last_migration_version` so it never re-runs.
 
 ## Architecture
 

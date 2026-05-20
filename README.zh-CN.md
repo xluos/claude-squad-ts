@@ -33,9 +33,11 @@
 - **浮层 modal + toast 通知** —— modal 不再覆盖整个屏幕，而是浮在主界面上方（自带不透明背景遮住下面）；成功 / 错误通知从顶部居中浮现，自动消失
 - **commit 分歧指示** —— 实例行显示 `↑N`（领先主分支 N 个 commit）和 `↓N`（主分支前进了 N 个 commit），知道什么时候该 rebase
 - **大写 `M` = 合并后关闭实例** —— 小写 `m` 合并后保留代理继续跑；大写 `M` 合并完直接清理 tmux / worktree / branch
+- **`u` = 从基准分支同步下来** —— 反方向 merge：把当前任务的基准分支 fold 进 worktree，长时间跑的 agent 也能吃到其他实例合入的基建变更。先 `git merge-tree` dry-run；冲突就 toast 文件数，不会让 worktree 卡在 MERGING
+- **per-instance 基准分支 chip** —— Diff tab 上 "based on …" 标签按 instance 创建时锚定，不再随 host 当前分支漂（host `git checkout` 切走后也不会骗人）
+- **每仓库状态 + worktree 隔离** —— 在不同目录打开 claude-squad 不再共享会话列表，每个 repo 独立的 `projects/<id>/state.json` 和 worktree 池。老 `~/.claude-squad/state.json` 首次启动自动迁移
 - **合并时自动 commit dirty 改动** —— 如果合并时工作树有未提交改动，overlay 会提示，并自动先 commit 到源分支再合并（跟原本暂停时的自动 commit 行为对齐）
 - **帮助 overlay 跟真实快捷键对齐** —— `HelpOverlay.tsx` 是唯一来源，老的 `HELP_BINDINGS` 死代码已清理
-- **state.json schema 跟 Go 版完全一致** —— 你可以拿任一个二进制对同一份 `~/.claude-squad/state.json` A/B 测试
 
 ## 安装
 
@@ -75,8 +77,8 @@ cs                  # 在当前 git 仓库里启动
 cs -p "aider"       # 覆盖默认 program
 cs -y               # 自动接受所有提示（auto-yes）
 cs --lang zh        # 单次强制中文 UI
-cs debug            # 打印配置路径
-cs reset            # 清空所有保存的实例
+cs debug            # 打印配置路径 + 当前项目 + 项目注册表
+cs reset            # 清空**当前项目**保存的实例
 ```
 
 ### 按键表
@@ -95,6 +97,7 @@ cs reset            # 清空所有保存的实例
 | `r`                  | 恢复已暂停的会话                                                  |
 | `m`                  | 合并工作树分支到主分支（代理继续跑）                              |
 | `M`                  | 合并并关闭实例 —— 合并完清理 tmux / worktree / branch             |
+| `u`                  | 从基准分支同步下来 —— 把 host 的新提交拉进当前 worktree           |
 | `tab`                | 在 Preview 和 Diff 之间切换                                       |
 | `shift+↑` / `shift+↓`| 滚动 preview / diff（Esc 退出滚动模式）                           |
 | `?`                  | 完整帮助                                                          |
@@ -132,11 +135,27 @@ cs reset            # 清空所有保存的实例
 
 定义了多个 profile 后，新建会话的 overlay 会显示 profile 选择器，`tab` 切换。
 
+## 磁盘布局
+
+```
+~/.claude-squad/
+├── global_state.json                  # 项目注册表 + 已看 help 位图 + migration 版本
+├── config.json
+├── projects/
+│   └── <sha256(repoPath)[:16]>/
+│       ├── state.json                 # 这个项目的实例
+│       └── worktrees/                 # 这个项目新建的 worktree
+└── state.json.legacy.bak              # 仅当从 v0.2.3 之前的版本迁移过来才会出现
+```
+
+projectID = `sha256(repoPath)[:16]`，其中 `repoPath` 是 git worktree 顶层路径（所以 `~/proj` 和 `~/proj-other-worktree` 是两个不同的项目，跟 cwd 直觉一致）。
+
 ## 跟 Go 版的兼容性
 
-- **`~/.claude-squad/state.json` 用同样的 schema** —— 字段、enum 值、类型都跟上游对齐。同一份 state 可以来回切两个二进制跑，不冲突。
-- **`display_name`** 是我们新加的字段（可选），让中文名能在列表里显示，同时底层 `title` 保持 kebab-case ASCII（tmux session 名 / git 分支 / 文件路径都干净）。
-- **回退兼容**：当 `display_name` 缺失（Go 版写的数据），UI 自动回退用 `title`。
+- **状态布局跟上游 Go 的项目隔离重构对齐** —— `projects/<id>/state.json` 和 `global_state.json` 的字段都遵循上游 `config/global_state.go` / `session/project_storage.go` 定义，两个二进制能互读对方的状态。
+- **`display_name`** 是我们加在 instance 上的字段（可选），让中文名能在列表里显示，同时底层 `title` 保持 kebab-case ASCII（tmux session 名 / git 分支 / 文件路径都干净）。
+- **`base_branch_name`** 是 worktree 数据里我们加的字段（`u` 同步 + Diff tab chip 用），缺失时首次启动用 `git branch --contains <base_sha>` 兜底回填，一次启动就补上。
+- **老数据迁移**：第一次启动新版时，旧的单文件 `~/.claude-squad/state.json` 会被按项目拆到上面的目录结构里。原文件重命名为 `state.json.legacy.bak` 留作回退；用 `global_state.last_migration_version` 锁定一次性，不会重跑。
 
 ## 架构
 
