@@ -1,6 +1,22 @@
 import { runGit } from './exec.js';
 
 /**
+ * Structured reason a precheck refused to proceed. Lifted out of plain
+ * strings so the UI layer can localize it — keep this module free of
+ * presentation concerns.
+ */
+export type MergeBlocker =
+  | { kind: 'hostDetachedHead' }
+  | { kind: 'hostDirty' }
+  | { kind: 'sourceBranchMissing'; branch: string }
+  | { kind: 'worktreeDetachedHead' }
+  | { kind: 'worktreeDirty' }
+  | { kind: 'worktreeOnHostBranch'; branch: string }
+  | { kind: 'hostBranchMissing'; branch: string }
+  | { kind: 'mergePrecheckFailed'; detail: string }
+  | { kind: 'syncPrecheckFailed'; detail: string };
+
+/**
  * Outcome of the merge precheck. Exactly one of these is true:
  *  - `clean === true` and `conflicts.length === 0` → safe to merge
  *  - `conflicts.length > 0`                        → conflicts on those paths
@@ -14,7 +30,7 @@ export interface MergePrecheck {
   conflicts: string[];
   /** Set when the precheck refused to attempt (dirty host, detached HEAD,
    * missing branch, ...). Mutually exclusive with `conflicts`. */
-  blocker?: string;
+  blocker?: MergeBlocker;
 }
 
 /**
@@ -33,7 +49,7 @@ export async function precheckMerge(
       clean: false,
       hostBranch: '',
       conflicts: [],
-      blocker: 'host repo is in detached HEAD — checkout a branch first',
+      blocker: { kind: 'hostDetachedHead' },
     };
   }
 
@@ -43,7 +59,7 @@ export async function precheckMerge(
       clean: false,
       hostBranch,
       conflicts: [],
-      blocker: 'host repo has uncommitted changes — commit or stash first',
+      blocker: { kind: 'hostDirty' },
     };
   }
 
@@ -53,7 +69,7 @@ export async function precheckMerge(
       clean: false,
       hostBranch,
       conflicts: [],
-      blocker: `branch "${sourceBranch}" not found in host repo (was the worktree pushed?)`,
+      blocker: { kind: 'sourceBranchMissing', branch: sourceBranch },
     };
   }
 
@@ -87,7 +103,7 @@ export async function precheckMerge(
       clean: false,
       hostBranch,
       conflicts: [],
-      blocker: (mtR.stderr || mtR.stdout).trim() || 'merge precheck failed',
+      blocker: { kind: 'mergePrecheckFailed', detail: (mtR.stderr || mtR.stdout).trim() },
     };
   }
   return { clean: false, hostBranch, conflicts };
@@ -161,7 +177,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: 'worktree is in detached HEAD — cannot sync',
+      blocker: { kind: 'worktreeDetachedHead' },
     };
   }
 
@@ -174,7 +190,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: 'worktree has uncommitted changes — let the agent settle first',
+      blocker: { kind: 'worktreeDirty' },
     };
   }
 
@@ -183,7 +199,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: `worktree is already on "${hostBranch}" — nothing to sync`,
+      blocker: { kind: 'worktreeOnHostBranch', branch: hostBranch },
     };
   }
 
@@ -193,7 +209,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: `branch "${hostBranch}" not found from worktree`,
+      blocker: { kind: 'hostBranchMissing', branch: hostBranch },
     };
   }
 
@@ -220,7 +236,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: (mtR.stderr || mtR.stdout).trim() || 'sync precheck failed',
+      blocker: { kind: 'syncPrecheckFailed', detail: (mtR.stderr || mtR.stdout).trim() },
     };
   }
   return { clean: false, hostBranch: worktreeBranch, conflicts };

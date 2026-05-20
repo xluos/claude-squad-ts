@@ -1,7 +1,7 @@
 import { useKeyboard } from '@opentui/solid';
 import { For, Show } from 'solid-js';
 import type { MergePreview } from '../../app/state.js';
-import { t } from '../../shared/i18n.js';
+import { formatBlocker, t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
 
 export interface MergeOverlayProps {
@@ -104,7 +104,7 @@ export function MergeOverlay(props: MergeOverlayProps) {
       </box>
 
       <Show when={props.preview.blocker}>
-        <text fg={colors.danger}>{props.preview.blocker}</text>
+        {(b) => <text fg={colors.danger}>{formatBlocker(b())}</text>}
       </Show>
 
       <Show when={props.preview.conflicts.length > 0}>

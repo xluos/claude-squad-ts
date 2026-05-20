@@ -14,6 +14,8 @@
  * static checks for typos — no stringly-typed `t('help.pressAnyKey')`.
  */
 
+import type { MergeBlocker } from '../session/git/merge.js';
+
 export type Lang = 'en' | 'zh';
 export type LangSetting = Lang | 'auto';
 
@@ -192,6 +194,20 @@ const EN = {
     applyConflicts: (host: string, n: number) =>
       `cannot apply into ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
     applyFailed: (err: string) => `apply failed: ${err}`,
+  },
+  blocker: {
+    hostDetachedHead: 'host repo is in detached HEAD — checkout a branch first',
+    hostDirty: 'host repo has uncommitted changes — commit or stash first',
+    sourceBranchMissing: (branch: string) =>
+      `branch "${branch}" not found in host repo (was the worktree pushed?)`,
+    worktreeDetachedHead: 'worktree is in detached HEAD — cannot sync',
+    worktreeDirty: 'worktree has uncommitted changes — let the agent settle first',
+    worktreeOnHostBranch: (branch: string) =>
+      `worktree is already on "${branch}" — nothing to sync`,
+    hostBranchMissing: (branch: string) => `branch "${branch}" not found from worktree`,
+    mergePrecheckFailed: (detail: string) => detail || 'merge precheck failed',
+    syncPrecheckFailed: (detail: string) => detail || 'sync precheck failed',
+    noBaseBranch: 'no base branch recorded for this instance',
   },
   menu: {
     new: 'new',
@@ -386,6 +402,19 @@ const ZH: Messages = {
     applyConflicts: (host: string, n: number) => `无法 apply 到 ${host}: ${n} 个文件会冲突`,
     applyFailed: (err: string) => `apply 失败: ${err}`,
   },
+  blocker: {
+    hostDetachedHead: '主仓库处于游离 HEAD —— 请先 checkout 一个分支',
+    hostDirty: '主仓库有未提交改动 —— 请先 commit 或 stash',
+    sourceBranchMissing: (branch: string) =>
+      `主仓库找不到分支 "${branch}"（worktree 是否已 push?）`,
+    worktreeDetachedHead: '工作树处于游离 HEAD —— 无法同步',
+    worktreeDirty: '工作树有未提交改动 —— 请等 agent 收尾',
+    worktreeOnHostBranch: (branch: string) => `工作树已经在 "${branch}" 上 —— 没什么可同步`,
+    hostBranchMissing: (branch: string) => `工作树看不到分支 "${branch}"`,
+    mergePrecheckFailed: (detail: string) => detail || '合并预检失败',
+    syncPrecheckFailed: (detail: string) => detail || '同步预检失败',
+    noBaseBranch: '该实例没有记录基准分支',
+  },
   menu: {
     new: '新建',
     kill: '删除',
@@ -443,4 +472,32 @@ export function resolveLang(setting: LangSetting | undefined): Lang {
  */
 export function t<R>(pick: (m: Messages) => R): R {
   return pick(MESSAGES[currentLang]);
+}
+
+/**
+ * Render a precheck `MergeBlocker` as a localized human string. The git
+ * layer keeps reasons as structured discriminants; presentation joins them
+ * with the active language here.
+ */
+export function formatBlocker(b: MergeBlocker): string {
+  switch (b.kind) {
+    case 'hostDetachedHead':
+      return t((m) => m.blocker.hostDetachedHead);
+    case 'hostDirty':
+      return t((m) => m.blocker.hostDirty);
+    case 'sourceBranchMissing':
+      return t((m) => m.blocker.sourceBranchMissing)(b.branch);
+    case 'worktreeDetachedHead':
+      return t((m) => m.blocker.worktreeDetachedHead);
+    case 'worktreeDirty':
+      return t((m) => m.blocker.worktreeDirty);
+    case 'worktreeOnHostBranch':
+      return t((m) => m.blocker.worktreeOnHostBranch)(b.branch);
+    case 'hostBranchMissing':
+      return t((m) => m.blocker.hostBranchMissing)(b.branch);
+    case 'mergePrecheckFailed':
+      return t((m) => m.blocker.mergePrecheckFailed)(b.detail);
+    case 'syncPrecheckFailed':
+      return t((m) => m.blocker.syncPrecheckFailed)(b.detail);
+  }
 }

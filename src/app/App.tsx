@@ -32,7 +32,7 @@ import {
   MAX_INSTANCES,
   METADATA_TICK_MS,
 } from '../shared/constants.js';
-import { t } from '../shared/i18n.js';
+import { formatBlocker, t } from '../shared/i18n.js';
 import { log } from '../shared/logger.js';
 import { loadGlobalState, markHelpSeen } from '../shared/state.js';
 import { colors } from '../shared/styles.js';
@@ -553,13 +553,13 @@ export function App(props: AppProps) {
     }
     const baseBranch = inst.baseBranch();
     if (!baseBranch) {
-      store.setError(t((m) => m.toast.syncBlocked)('no base branch recorded for this instance'));
+      store.setError(t((m) => m.toast.syncBlocked)(t((m) => m.blocker.noBaseBranch)));
       return;
     }
     try {
       const pre = await precheckSyncFromHost(worktreePath, baseBranch);
       if (pre.blocker) {
-        store.setError(t((m) => m.toast.syncBlocked)(pre.blocker));
+        store.setError(t((m) => m.toast.syncBlocked)(formatBlocker(pre.blocker)));
         return;
       }
       if (pre.conflicts.length > 0) {
@@ -589,12 +589,12 @@ export function App(props: AppProps) {
     try {
       const hostBranch = await getHostBranch(props.repoPath);
       if (!hostBranch) {
-        store.setError(t((m) => m.toast.applyBlocked)('host repo is in detached HEAD'));
+        store.setError(t((m) => m.toast.applyBlocked)(formatBlocker({ kind: 'hostDetachedHead' })));
         return;
       }
       const pre = await precheckMerge(props.repoPath, inst.branch);
       if (pre.blocker) {
-        store.setError(t((m) => m.toast.applyBlocked)(pre.blocker));
+        store.setError(t((m) => m.toast.applyBlocked)(formatBlocker(pre.blocker)));
         return;
       }
       if (pre.conflicts.length > 0) {

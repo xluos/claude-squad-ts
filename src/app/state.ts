@@ -1,4 +1,5 @@
 import { createStore, produce } from 'solid-js/store';
+import type { MergeBlocker } from '../session/git/merge.js';
 import type { Instance } from '../session/instance.js';
 import { APP_STATE, type AppStateValue } from '../shared/types.js';
 
@@ -21,7 +22,7 @@ export interface MergePreview {
   /** Conflicting file paths reported by `git merge-tree`. Empty when clean. */
   conflicts: string[];
   /** Set when precheck refused to run (dirty host, detached HEAD, ...). */
-  blocker?: string;
+  blocker?: MergeBlocker;
   /** Source instance's program string — used to label the agent prompt option. */
   program: string;
   /** Worktree has uncommitted changes. Confirming the merge will
