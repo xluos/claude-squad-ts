@@ -3,6 +3,10 @@ export const Status = {
   Ready: 1,
   Loading: 2,
   Paused: 3,
+  /** Tmux session died out from under us (system reboot, OOM, manual kill,
+   *  …). Worktree usually still intact, so resume can restart just tmux
+   *  rather than rebuild everything. UI shows ✗ icon + recovery hint. */
+  Error: 4,
 } as const;
 export type Status = (typeof Status)[keyof typeof Status];
 
@@ -16,6 +20,8 @@ export function statusLabel(s: Status): string {
       return 'loading';
     case Status.Paused:
       return 'paused';
+    case Status.Error:
+      return 'error';
   }
 }
 

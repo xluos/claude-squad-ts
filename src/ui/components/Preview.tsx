@@ -14,6 +14,11 @@ export interface PreviewProps {
    * tmux session has been killed, so we render a hint instead of probing
    * a dead session and showing the empty capture. */
   paused: boolean;
+  /** True when the instance's tmux died externally (Status.Error). We
+   *  render a "press r to recover" message instead of either the live
+   *  tail (which would just spam capture errors) or the paused view
+   *  (which implies a clean state, which this isn't). */
+  errored: boolean;
   width: number;
   height: number;
   /** Frozen scrollback view while true; tail follow when false. */
@@ -66,12 +71,14 @@ export function Preview(props: PreviewProps) {
   // Live tail: refresh every 100ms while not in scroll mode.
   createEffect(
     on(
-      () => [props.instance?.title, props.paused, props.scrollMode] as const,
-      ([title, paused, scrolling]) => {
+      () => [props.instance?.title, props.paused, props.errored, props.scrollMode] as const,
+      ([title, paused, errored, scrolling]) => {
         if (!title) return;
-        if (paused) {
-          // Paused (checked out): tmux is gone — drop any stale capture so
-          // a later resume doesn't briefly flash the previous content.
+        if (paused || errored) {
+          // Paused or errored: tmux is gone or unhealthy — drop the
+          // stale capture so a later resume/recovery doesn't briefly
+          // flash the previous content, and skip polling since the
+          // render branch below already explains the state.
           setLiveContent('');
           setHistoryContent('');
           setErr(null);
@@ -151,7 +158,9 @@ export function Preview(props: PreviewProps) {
         else if (dir === 'down') props.onScroll?.('down');
       }}
     >
-      {err() ? (
+      {props.errored ? (
+        <Logo caption={t((m) => m.preview.errorRecover)} />
+      ) : err() ? (
         <Logo caption={t((m) => m.preview.errorPrefix)(err() ?? '')} />
       ) : !props.instance ? (
         <Logo caption={t((m) => m.preview.pressNToCreate)} />

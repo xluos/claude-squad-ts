@@ -301,6 +301,11 @@ export class Instance {
 
   async pause(): Promise<void> {
     if (!this.worktree || !this.tmux) return;
+    // Synchronous status flip *before* the first await so callers can
+    // bumpRev() immediately and the spinner shows up — large worktrees
+    // can otherwise stall the UI silently for several seconds.
+    const previousStatus = this.status;
+    this.status = Status.Loading;
     try {
       if (await this.worktree.isValid()) {
         if (await this.worktree.isDirty()) {
@@ -314,9 +319,14 @@ export class Instance {
         }
         await this.worktree.prune();
       }
-    } finally {
       this.status = Status.Paused;
       this.updatedAt = new Date();
+    } catch (err) {
+      // Roll back on failure — if the worktree is still on disk we're not
+      // really paused, and showing Paused would let the user trip into
+      // resume() flows that immediately fail.
+      this.status = previousStatus;
+      throw err;
     }
   }
 
@@ -324,9 +334,16 @@ export class Instance {
     if (!this.worktree || !this.tmux) {
       throw new Error('cannot resume: instance was never started');
     }
+    // Error recovery: tmux died but worktree is still on disk. Just
+    // restart tmux against the existing worktree — no need to rebuild.
+    if (this.status === Status.Error) {
+      await this.restartTmux();
+      return;
+    }
     if (await this.worktree.isBranchCheckedOut()) {
       throw new Error(`branch ${this.worktree.data.branch_name} is already checked out elsewhere`);
     }
+    const previousStatus = this.status;
     this.status = Status.Loading;
     try {
       await this.worktree.setup();
@@ -336,7 +353,34 @@ export class Instance {
       this.status = Status.Running;
       this.updatedAt = new Date();
     } catch (err) {
-      this.status = Status.Paused;
+      this.status = previousStatus;
+      throw err;
+    }
+  }
+
+  /**
+   * Reattach a tmux session against the existing worktree, used by
+   * Error-state recovery. Doesn't touch the worktree on disk — the
+   * common case is "tmux died, worktree is fine".
+   */
+  async restartTmux(): Promise<void> {
+    if (!this.tmux || !this.worktree) {
+      throw new Error('cannot restart tmux: instance was never started');
+    }
+    const previousStatus = this.status;
+    this.status = Status.Loading;
+    try {
+      // `tmux.start` is idempotent only when the session is missing —
+      // if a zombie still claims the name we'd silently re-bind to it.
+      // Force a fresh start to ensure we actually own the new session.
+      if (await this.tmux.exists()) {
+        await this.tmux.close();
+      }
+      await this.tmux.start(this.worktree.data.worktree_path);
+      this.status = Status.Running;
+      this.updatedAt = new Date();
+    } catch (err) {
+      this.status = previousStatus;
       throw err;
     }
   }
@@ -431,8 +475,10 @@ export class Instance {
   /**
    * Reconcile the in-memory status with what tmux actually says. If the
    * tmux session has died (e.g. the agent ran `exit`, or the user killed
-   * the tmux session manually), demote a Running instance to Ready so the
-   * status icon in the list stops claiming the agent is still alive.
+   * the tmux session manually) while we thought it was Running, promote
+   * to Status.Error so the UI shows the recoverable-failure icon — the
+   * user can then press `r` to restart tmux against the still-on-disk
+   * worktree without rebuilding from scratch.
    *
    * Returns true if the underlying tmux is alive, false otherwise.
    */
@@ -442,11 +488,14 @@ export class Instance {
     if (this.isPaused()) return true;
     const alive = await this.tmux.exists();
     if (!alive && this.status === Status.Running) {
-      this.status = Status.Ready;
-      this.started = false;
+      this.status = Status.Error;
       this.updatedAt = new Date();
     }
     return alive;
+  }
+
+  isError(): boolean {
+    return this.status === Status.Error;
   }
 
   getWorktree(): Worktree {

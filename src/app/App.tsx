@@ -399,11 +399,17 @@ export function App(props: AppProps) {
     if (seq === 'r') {
       store.setPressedKey('r');
       void (async () => {
+        // Kick off resume but bump rev *before* awaiting so the
+        // Loading spinner appears immediately — resume() sets
+        // Status.Loading synchronously before its first await.
+        const p = selected.resume();
+        store.bumpRev();
         try {
-          await selected.resume();
+          await p;
           store.replaceInstance(selected);
         } catch (err) {
           store.setError(errMsg(err));
+          store.bumpRev();
         }
       })();
       return;
@@ -636,12 +642,15 @@ export function App(props: AppProps) {
     const inst = store.model.instances[preview.index];
     store.closeOverlay();
     if (!inst) return;
+    const p = inst.pause();
+    store.bumpRev();
     try {
-      await inst.pause();
+      await p;
       store.replaceInstance(inst);
       if (inst.branch) void writeClipboard(inst.branch).catch(() => undefined);
     } catch (err) {
       store.setError(errMsg(err));
+      store.bumpRev();
     }
   }
 
@@ -867,7 +876,12 @@ export function App(props: AppProps) {
         await inst.kill();
         store.removeInstance(inst.title);
       } else if (action.kind === 'pause') {
-        await inst.pause();
+        // Kick off pause then bumpRev *before* awaiting so the spinner
+        // appears immediately — pause() sets Status.Loading synchronously
+        // before its first await, so the bump captures it.
+        const p = inst.pause();
+        store.bumpRev();
+        await p;
         store.replaceInstance(inst);
         // Mirror the Go version: stash the branch name on the clipboard so
         // the user can `git checkout` it elsewhere without re-typing.
@@ -905,6 +919,10 @@ export function App(props: AppProps) {
   const selectedPaused = createMemo(() => {
     void store.model.rev;
     return selectedInstance()?.isPaused() ?? false;
+  });
+  const selectedErrored = createMemo(() => {
+    void store.model.rev;
+    return selectedInstance()?.isError() ?? false;
   });
   // Tracks `rev` so the diff-stats badge on the Diff tab refreshes whenever
   // the metadata tick recomputes the selected instance's diff. Without the
@@ -1014,6 +1032,7 @@ export function App(props: AppProps) {
                 <Preview
                   instance={selectedInstance()}
                   paused={selectedPaused()}
+                  errored={selectedErrored()}
                   width={previewCols()}
                   height={previewRows()}
                   scrollMode={store.model.scrollMode}

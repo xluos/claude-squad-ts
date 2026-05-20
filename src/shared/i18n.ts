@@ -41,6 +41,7 @@ const EN = {
     emptyCapture: '(empty)',
     pressNToCreate: 'Press n to create a new session — N for one with a prompt',
     errorPrefix: (msg: string) => `Error: ${msg}`,
+    errorRecover: 'Session encountered an error — press r to restart tmux, d to delete',
     scrollFooter: (offset: number) => `-- scroll mode (offset ${offset}) — Esc to follow tail --`,
   },
   diff: {
@@ -238,6 +239,7 @@ const ZH: Messages = {
     emptyCapture: '(空)',
     pressNToCreate: '按 n 创建新会话 —— N 带提示词创建',
     errorPrefix: (msg: string) => `错误: ${msg}`,
+    errorRecover: '会话出错 —— 按 r 重启 tmux，d 删除实例',
     scrollFooter: (offset: number) => `-- 滚动模式 (偏移 ${offset}) — Esc 回到最新 --`,
   },
   diff: {

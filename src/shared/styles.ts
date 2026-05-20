@@ -47,6 +47,7 @@ export const colors = {
   statusReady: ansi(4),
   statusLoading: ansi(3),
   statusPaused: ansi(8),
+  statusError: ansi(1),
 
   diffAdded: ansi(2),
   diffRemoved: ansi(1),
@@ -86,5 +87,6 @@ export const icons = {
   ready: '○',
   loading: '◐',
   paused: '⏸',
+  error: '✗',
   selected: '▶',
 } as const;

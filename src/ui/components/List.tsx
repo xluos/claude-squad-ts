@@ -208,6 +208,8 @@ function iconFor(status: Status): string {
       return icons.loading;
     case Status.Paused:
       return icons.paused;
+    case Status.Error:
+      return icons.error;
   }
 }
 
@@ -221,5 +223,7 @@ function iconColorFor(status: Status): string | RGBA {
       return colors.statusLoading;
     case Status.Paused:
       return colors.statusPaused;
+    case Status.Error:
+      return colors.statusError;
   }
 }
