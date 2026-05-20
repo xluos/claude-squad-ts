@@ -1,0 +1,33 @@
+# Dependabot keeps two ecosystems fresh:
+#  - npm dependencies (production + dev), grouped so we don't get spammed
+#    with one PR per @opentui patch.
+#  - GitHub Actions versions in workflow files — important because the
+#    release.yml OIDC dance relies on setup-node staying current.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      opentui:
+        patterns:
+          - '@opentui/*'
+      solid:
+        patterns:
+          - 'solid-js'
+          - '@solid*/*'
+      dev:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore(ci)
