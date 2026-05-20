@@ -30,6 +30,9 @@ export interface NewInstanceOpts {
   path: string;
   program: string;
   branchPrefix: string;
+  /** Project this instance belongs to (resolved from the host repo at
+   *  CLI entry). Scopes the on-disk worktree path. */
+  projectID: string;
   autoYes?: boolean;
   /** Use this existing branch instead of cutting a new one from HEAD. */
   branch?: string;
@@ -77,6 +80,7 @@ export class Instance {
   private worktree: Worktree | null = null;
   private monitor = new StatusMonitor();
   private readonly branchPrefix: string;
+  private readonly projectID: string;
 
   constructor(init: {
     title: string;
@@ -84,6 +88,7 @@ export class Instance {
     path: string;
     program: string;
     branchPrefix: string;
+    projectID: string;
     autoYes?: boolean;
     branch?: string;
     prompt?: string;
@@ -101,6 +106,7 @@ export class Instance {
     this.path = init.path;
     this.program = init.program;
     this.branchPrefix = init.branchPrefix;
+    this.projectID = init.projectID;
     this.autoYes = init.autoYes ?? false;
     this.selectedBranch = init.branch ?? '';
     this.prompt = init.prompt ?? '';
@@ -149,6 +155,7 @@ export class Instance {
       path: opts.path,
       program: opts.program,
       branchPrefix: opts.branchPrefix,
+      projectID: opts.projectID,
       autoYes: opts.autoYes,
       branch: opts.branch,
       prompt: opts.prompt,
@@ -157,7 +164,7 @@ export class Instance {
     });
   }
 
-  static fromPersisted(data: InstanceData, branchPrefix: string): Instance {
+  static fromPersisted(data: InstanceData, branchPrefix: string, projectID: string): Instance {
     const inst = new Instance({
       title: data.title,
       // Backward compat: pre-dual-naming data has no display_name → use title.
@@ -165,6 +172,7 @@ export class Instance {
       path: data.path,
       program: data.program,
       branchPrefix,
+      projectID,
       autoYes: data.auto_yes,
       branch: data.worktree.branch_name,
       branchName: data.branch,
@@ -246,12 +254,14 @@ export class Instance {
             this.path,
             this.selectedBranch,
             this.title,
+            this.projectID,
           );
         } else {
           this.worktree = await createWorktree({
             repoPath: this.path,
             sessionName: this.title,
             branchPrefix: this.branchPrefix,
+            projectID: this.projectID,
           });
         }
         await this.worktree.setup();

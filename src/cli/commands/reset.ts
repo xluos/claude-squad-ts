@@ -1,10 +1,20 @@
 import { runCmd } from '../../session/git/exec.js';
+import { findRepoRoot, isGitRepo } from '../../session/git/util.js';
+import { ensureProject, migrateLegacyIfNeeded } from '../../session/project.js';
 import { createStorage } from '../../session/storage.js';
 import { loadConfig } from '../../shared/config.js';
 
 export async function runReset(): Promise<void> {
+  const cwd = process.cwd();
+  if (!(await isGitRepo(cwd))) {
+    throw new Error(`cwd is not a git repository: ${cwd}`);
+  }
+  const repoPath = await findRepoRoot(cwd);
+  await migrateLegacyIfNeeded();
+  const project = await ensureProject(repoPath);
+
   const cfg = await loadConfig();
-  const storage = createStorage();
+  const storage = createStorage(project.id, repoPath);
   const instances = await storage.loadInstances(cfg.branch_prefix);
   for (const inst of instances) {
     try {
@@ -23,5 +33,5 @@ export async function runReset(): Promise<void> {
       process.stdout.write(`✓ killed tmux ${name}\n`);
     }
   }
-  process.stdout.write('Done.\n');
+  process.stdout.write(`Done. (project ${project.id})\n`);
 }

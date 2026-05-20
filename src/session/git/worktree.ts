@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { worktreesRoot } from '../../shared/paths.js';
+import { projectWorktreesRoot } from '../../shared/paths.js';
 import type { DiffStats, GitStatus, WorktreeData } from '../../shared/types.js';
 import { computeDiff, computeDiffNumstat } from './diff.js';
 import { ensureOk, runCmd, runGit } from './exec.js';
@@ -20,6 +20,9 @@ export interface WorktreeInit {
   repoPath: string;
   sessionName: string;
   branchPrefix: string;
+  /** Project the worktree belongs to. Scopes the on-disk worktree path
+   *  to `~/.claude-squad/projects/<projectID>/worktrees/`. */
+  projectID: string;
 }
 
 /** Commit divergence between the worktree branch and the host repo's
@@ -59,7 +62,7 @@ export async function createWorktree(init: WorktreeInit): Promise<Worktree> {
   const baseBranch = (await getHostBranch(repoPath)) ?? '';
   return buildWorktree({
     repo_path: repoPath,
-    worktree_path: makeWorktreePath(init.sessionName),
+    worktree_path: makeWorktreePath(init.projectID, init.sessionName),
     session_name: init.sessionName,
     branch_name: branchName,
     base_commit_sha: '',
@@ -72,11 +75,12 @@ export async function createWorktreeFromBranch(
   repoPath: string,
   branchName: string,
   sessionName: string,
+  projectID: string,
 ): Promise<Worktree> {
   const repo = await findRepoRoot(repoPath);
   return buildWorktree({
     repo_path: repo,
-    worktree_path: makeWorktreePath(sessionName),
+    worktree_path: makeWorktreePath(projectID, sessionName),
     session_name: sessionName,
     branch_name: branchName,
     base_commit_sha: '',
@@ -89,9 +93,9 @@ export function worktreeFromData(data: WorktreeData): Worktree {
   return buildWorktree({ ...data });
 }
 
-function makeWorktreePath(sessionName: string): string {
+function makeWorktreePath(projectID: string, sessionName: string): string {
   const safe = sanitizeBranchName(sessionName) || 'session';
-  return join(worktreesRoot(), `${safe}_${Date.now()}`);
+  return join(projectWorktreesRoot(projectID), `${safe}_${Date.now()}`);
 }
 
 function buildWorktree(data: WorktreeData): Worktree {

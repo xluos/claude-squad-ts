@@ -1,5 +1,5 @@
 import { log } from '../shared/logger.js';
-import { loadState, saveState } from '../shared/state.js';
+import { loadProjectState, saveProjectState, updateProjectInstanceCount } from '../shared/state.js';
 import { guessBaseBranch } from './git/util.js';
 import { Instance } from './instance.js';
 
@@ -10,10 +10,16 @@ export interface InstanceStorage {
   deleteAll(): Promise<void>;
 }
 
-export function createStorage(): InstanceStorage {
+/**
+ * Per-project instance storage. All reads/writes target
+ * `projects/<projectID>/state.json`. The legacy global `state.json` is
+ * no longer touched — `migrateLegacyIfNeeded` (in `session/project.ts`)
+ * is responsible for moving data into the new layout on first launch.
+ */
+export function createStorage(projectID: string, repoPath: string): InstanceStorage {
   return {
     async loadInstances(branchPrefix: string): Promise<Instance[]> {
-      const state = await loadState();
+      const state = await loadProjectState(projectID, repoPath);
       // One-shot backfill: instances persisted before `base_branch_name`
       // existed have no fork-point recorded. For existing-branch worktrees
       // the answer is trivially their own branch; for new-from-HEAD ones
@@ -46,7 +52,7 @@ export function createStorage(): InstanceStorage {
       }
       if (dirty) {
         try {
-          await saveState(state);
+          await saveProjectState(state);
         } catch (err) {
           log.warn('failed to persist base-branch backfill', err);
         }
@@ -55,7 +61,7 @@ export function createStorage(): InstanceStorage {
       const out: Instance[] = [];
       for (const data of state.instances) {
         try {
-          out.push(Instance.fromPersisted(data, branchPrefix));
+          out.push(Instance.fromPersisted(data, branchPrefix, projectID));
         } catch (err) {
           log.warn(`failed to restore instance ${data.title}`, err);
         }
@@ -64,21 +70,30 @@ export function createStorage(): InstanceStorage {
     },
 
     async saveInstances(instances: Instance[]): Promise<void> {
-      const state = await loadState();
+      const state = await loadProjectState(projectID, repoPath);
       state.instances = instances.filter((i) => i.hasStarted()).map((i) => i.toPersisted());
-      await saveState(state);
+      await saveProjectState(state);
+      await updateProjectInstanceCount(projectID, state.instances.length).catch((err) =>
+        log.warn(`failed to update project instance count`, err),
+      );
     },
 
     async deleteInstance(title: string): Promise<void> {
-      const state = await loadState();
+      const state = await loadProjectState(projectID, repoPath);
       state.instances = state.instances.filter((i) => i.title !== title);
-      await saveState(state);
+      await saveProjectState(state);
+      await updateProjectInstanceCount(projectID, state.instances.length).catch((err) =>
+        log.warn(`failed to update project instance count`, err),
+      );
     },
 
     async deleteAll(): Promise<void> {
-      const state = await loadState();
+      const state = await loadProjectState(projectID, repoPath);
       state.instances = [];
-      await saveState(state);
+      await saveProjectState(state);
+      await updateProjectInstanceCount(projectID, 0).catch((err) =>
+        log.warn(`failed to update project instance count`, err),
+      );
     },
   };
 }

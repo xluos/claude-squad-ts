@@ -78,9 +78,34 @@ export interface InstanceData {
   diff_stats?: DiffStats;
 }
 
+/** Legacy single-file format. Kept around for migration reads only —
+ *  new code should consume `ProjectState` / `GlobalState` instead. */
 export interface PersistedState {
   help_screens_seen: number;
   instances: InstanceData[];
+}
+
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  repo_path: string;
+  created_at: string;
+  updated_at: string;
+  instance_count: number;
+}
+
+export interface ProjectState {
+  project: ProjectMeta;
+  instances: InstanceData[];
+}
+
+export interface GlobalState {
+  projects: ProjectMeta[];
+  help_screens_seen: number;
+  /** Bumped each time a one-shot migration completes. Currently:
+   *  - 0 → never migrated
+   *  - 1 → legacy `state.json` instances moved into per-project state files */
+  last_migration_version: number;
 }
 
 export const APP_STATE = {

@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
+import type { Instance } from '../session/instance.js';
+import { listProjects, migrateLegacyIfNeeded } from '../session/project.js';
 import { createStorage } from '../session/storage.js';
 import { loadConfig } from '../shared/config.js';
 import { DEFAULT_DAEMON_POLL_MS } from '../shared/constants.js';
@@ -36,21 +38,43 @@ export async function stopDaemon(): Promise<void> {
   }
 }
 
+interface ScopedInstance {
+  inst: Instance;
+  projectID: string;
+  repoPath: string;
+}
+
 export async function runDaemon(): Promise<void> {
   const cfg = await loadConfig();
-  const storage = createStorage();
   const throttle = createThrottledLogger(60_000);
   const interval = cfg.daemon_poll_interval || DEFAULT_DAEMON_POLL_MS;
 
-  const instances = await storage.loadInstances(cfg.branch_prefix);
-  for (const inst of instances) {
-    inst.autoYes = true;
-    if (!inst.isPaused()) {
-      try {
-        await inst.start(false);
-      } catch (err) {
-        log.warn(`daemon: failed to attach to ${inst.title}`, err);
+  // Daemon spans every registered project — it has no notion of a
+  // "current" cwd. Run migration first so a fresh-from-legacy install
+  // still picks up its existing instances.
+  await migrateLegacyIfNeeded();
+  const projects = await listProjects();
+
+  const scoped: ScopedInstance[] = [];
+  const storages = new Map<string, ReturnType<typeof createStorage>>();
+  for (const project of projects) {
+    const storage = createStorage(project.id, project.repo_path);
+    storages.set(project.id, storage);
+    try {
+      const instances = await storage.loadInstances(cfg.branch_prefix);
+      for (const inst of instances) {
+        inst.autoYes = true;
+        if (!inst.isPaused()) {
+          try {
+            await inst.start(false);
+          } catch (err) {
+            log.warn(`daemon: failed to attach to ${inst.title}`, err);
+          }
+        }
+        scoped.push({ inst, projectID: project.id, repoPath: project.repo_path });
       }
+    } catch (err) {
+      log.warn(`daemon: failed to load project ${project.id}`, err);
     }
   }
 
@@ -63,7 +87,7 @@ export async function runDaemon(): Promise<void> {
   });
 
   while (!stopped) {
-    for (const inst of instances) {
+    for (const { inst } of scoped) {
       if (!inst.hasStarted() || inst.isPaused()) continue;
       try {
         const { hasPrompt } = await inst.hasUpdated();
@@ -78,7 +102,22 @@ export async function runDaemon(): Promise<void> {
     await sleep(interval);
   }
 
-  await storage.saveInstances(instances);
+  // Persist each project's instances back to its own state.json.
+  const byProject = new Map<string, ScopedInstance[]>();
+  for (const s of scoped) {
+    const bucket = byProject.get(s.projectID) ?? [];
+    bucket.push(s);
+    byProject.set(s.projectID, bucket);
+  }
+  for (const [projectID, list] of byProject) {
+    const storage = storages.get(projectID);
+    if (!storage) continue;
+    try {
+      await storage.saveInstances(list.map((s) => s.inst));
+    } catch (err) {
+      log.warn(`daemon: failed to save project ${projectID}`, err);
+    }
+  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -33,7 +33,7 @@ import {
 } from '../shared/constants.js';
 import { t } from '../shared/i18n.js';
 import { log } from '../shared/logger.js';
-import { loadState, markHelpSeen } from '../shared/state.js';
+import { loadGlobalState, markHelpSeen } from '../shared/state.js';
 import { colors } from '../shared/styles.js';
 import type { AppConfig } from '../shared/types.js';
 import { APP_STATE } from '../shared/types.js';
@@ -74,6 +74,10 @@ const SUBMIT_ON_ENTER_BINDINGS = [
 export interface AppProps {
   config: AppConfig;
   repoPath: string;
+  /** Stable per-repo identifier. Scopes state.json + worktree dir under
+   *  `~/.claude-squad/projects/<projectID>/`. Resolved at CLI entry from
+   *  `repoPath` via sha256-truncate. */
+  projectID: string;
   programOverride?: string;
   autoYes?: boolean;
   onAttachRequest: (instance: Instance) => Promise<void>;
@@ -83,7 +87,7 @@ export interface AppProps {
 export function App(props: AppProps) {
   const store = createAppStore();
   const dims = useTerminalDimensions();
-  const storage = createStorage();
+  const storage = createStorage(props.projectID, props.repoPath);
   const profiles = createMemo(() => getProfiles(props.config));
   const defaultProgram = createMemo(() => props.programOverride ?? effectiveProgram(props.config));
 
@@ -113,7 +117,7 @@ export function App(props: AppProps) {
   const [restored, setRestored] = createSignal(false);
   onMount(async () => {
     try {
-      const persisted = await loadState();
+      const persisted = await loadGlobalState();
       store.setHelpSeenMask(persisted.help_screens_seen);
       const loaded = await storage.loadInstances(props.config.branch_prefix);
       for (const inst of loaded) {
@@ -684,6 +688,7 @@ export function App(props: AppProps) {
         path: props.repoPath,
         program: defaultProgram(),
         branchPrefix: props.config.branch_prefix,
+        projectID: props.projectID,
         autoYes: props.autoYes ?? props.config.auto_yes,
         llm: props.config.llm,
       });
@@ -714,6 +719,7 @@ export function App(props: AppProps) {
         path: props.repoPath,
         program,
         branchPrefix: props.config.branch_prefix,
+        projectID: props.projectID,
         autoYes: props.autoYes ?? props.config.auto_yes,
         branch: store.model.selectedBranch || undefined,
         prompt: text,

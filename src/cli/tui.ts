@@ -2,8 +2,9 @@ import { createCliRenderer } from '@opentui/core';
 import { render } from '@opentui/solid';
 import { App } from '../app/App.js';
 import { launchDaemon, stopDaemon } from '../daemon/daemon.js';
-import { isGitRepo } from '../session/git/util.js';
+import { findRepoRoot, isGitRepo } from '../session/git/util.js';
 import type { Instance } from '../session/instance.js';
+import { ensureProject, migrateLegacyIfNeeded } from '../session/project.js';
 import { attachTmux } from '../session/tmux/attach.js';
 import { ensureDetachBinding } from '../session/tmux/tmux.js';
 import { loadConfig } from '../shared/config.js';
@@ -19,10 +20,17 @@ export interface TuiOpts {
 }
 
 export async function runTui(opts: TuiOpts): Promise<void> {
-  const repoPath = process.cwd();
-  if (!(await isGitRepo(repoPath))) {
-    throw new Error(`cwd is not a git repository: ${repoPath}`);
+  const cwd = process.cwd();
+  if (!(await isGitRepo(cwd))) {
+    throw new Error(`cwd is not a git repository: ${cwd}`);
   }
+  // Pin to the worktree top-level — same identity whether the user
+  // launches from the repo root or a nested directory.
+  const repoPath = await findRepoRoot(cwd);
+  // One-shot migration of legacy ~/.claude-squad/state.json into the
+  // per-project layout. Idempotent: keyed off `last_migration_version`.
+  await migrateLegacyIfNeeded();
+  const project = await ensureProject(repoPath);
   const config = await loadConfig();
   // Resolve UI language before any component mounts so the first paint is
   // already in the right language (no English-flash then re-render).
@@ -104,6 +112,7 @@ export async function runTui(opts: TuiOpts): Promise<void> {
       App({
         config,
         repoPath,
+        projectID: project.id,
         programOverride: opts.programOverride,
         autoYes: opts.autoYes,
         onAttachRequest: attachHandler,
