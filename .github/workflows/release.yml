@@ -27,7 +27,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           # OIDC trusted-publisher auth needs npm >= 11.5.1, which only
           # ships with Node 22.14.0+. Pinning to Node 24 (the version the
