@@ -930,13 +930,23 @@ export function App(props: AppProps) {
       </box>
       <Menu mode={menuMode()} pressedKey={store.model.pressedKey} />
 
-      {/* ===== Toast banners — float above the Menu, auto-dismiss. =====
-       *  Right-anchored at bottom (just above the Menu row) so they don't
-       *  reshape the main UI; zIndex 5 keeps them under modal overlays
-       *  (zIndex 10) — a modal should be the user's full attention, not
-       *  share screen real-estate with a passing toast. */}
+      {/* ===== Toast banners — float near the top, auto-dismiss. =====
+       *  Horizontally centered, just below the header row so it lands in
+       *  the user's eye-line without covering the bottom Menu or the
+       *  list/preview content underneath. zIndex 5 keeps them under
+       *  modal overlays (zIndex 10) — a modal should be the user's full
+       *  attention, not share screen real-estate with a passing toast. */}
       <Show when={store.model.error || store.model.info}>
-        <box position="absolute" bottom={1} right={2} flexDirection="column" gap={0} zIndex={5}>
+        <box
+          position="absolute"
+          top={3}
+          left={0}
+          width={dims().width}
+          flexDirection="column"
+          alignItems="center"
+          gap={0}
+          zIndex={5}
+        >
           <Show when={store.model.error}>
             <ErrorBox
               message={store.model.error}
