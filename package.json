@@ -1,6 +1,6 @@
 {
   "name": "claude-squad-ts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript rewrite of claude-squad — manage multiple Claude/Aider sessions over git worktrees + tmux. Built on SolidJS + OpenTUI for native IME / CJK support.",
   "type": "module",
   "license": "MIT",
