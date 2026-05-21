@@ -189,8 +189,10 @@ const EN = {
     syncConflicts: (host: string, n: number) =>
       `cannot sync ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
     syncFailed: (err: string) => `sync failed: ${err}`,
-    applied: (src: string, host: string) =>
-      `Applied ${src} → ${host} as one commit. Instance retired.`,
+    applied: (src: string, host: string, autoCommitted: boolean) => {
+      const auto = autoCommitted ? ' (with auto-commit of pending changes)' : '';
+      return `Applied ${src} → ${host} as one commit${auto}. Instance retired.`;
+    },
     applyBlocked: (reason: string) => `cannot apply: ${reason}`,
     applyConflicts: (host: string, n: number) =>
       `cannot apply into ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
@@ -421,8 +423,10 @@ const ZH: Messages = {
     syncBlocked: (reason: string) => `无法同步: ${reason}`,
     syncConflicts: (host: string, n: number) => `无法同步 ${host}: ${n} 个文件会冲突`,
     syncFailed: (err: string) => `同步失败: ${err}`,
-    applied: (src: string, host: string) =>
-      `已应用 ${src} → ${host}（一个 commit）。实例已关闭。`,
+    applied: (src: string, host: string, autoCommitted: boolean) => {
+      const auto = autoCommitted ? '（含未提交改动自动 commit）' : '';
+      return `已应用 ${src} → ${host}（一个 commit）${auto}。实例已关闭。`;
+    },
     applyBlocked: (reason: string) => `无法应用: ${reason}`,
     applyConflicts: (host: string, n: number) => `无法应用到 ${host}: ${n} 个文件会冲突`,
     applyFailed: (err: string) => `应用失败: ${err}`,

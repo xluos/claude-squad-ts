@@ -709,7 +709,12 @@ export function App(props: AppProps) {
         store.setError(t((m) => m.toast.applyBlocked)(formatBlocker({ kind: 'hostDetachedHead' })));
         return;
       }
-      const pre = await precheckMerge(props.repoPath, inst.branch);
+      // Mirror `m`'s overlay: surface dirty state so the confirm message
+      // can pre-announce the auto-commit instead of doing it silently.
+      const [pre, dirty] = await Promise.all([
+        precheckMerge(props.repoPath, inst.branch),
+        inst.isDirty().catch(() => false),
+      ]);
       if (pre.blocker) {
         store.setError(t((m) => m.toast.applyBlocked)(formatBlocker(pre.blocker)));
         return;
@@ -718,7 +723,7 @@ export function App(props: AppProps) {
         store.setError(t((m) => m.toast.applyConflicts)(hostBranch, pre.conflicts.length));
         return;
       }
-      store.openConfirm({ kind: 'apply', index, hostBranch });
+      store.openConfirm({ kind: 'apply', index, hostBranch, dirty });
     } catch (err) {
       store.setError(t((m) => m.toast.applyFailed)(errMsg(err)));
     }
@@ -728,7 +733,9 @@ export function App(props: AppProps) {
     // Mirror `m`'s auto-commit so the agent's in-flight edits land in the
     // squash result. Without this they'd be stranded in a worktree we're
     // about to delete.
-    await inst.commitDirty(`[claudesquad] auto-commit on apply of ${inst.title}`);
+    const autoCommitted = await inst.commitDirty(
+      `[claudesquad] auto-commit on apply of ${inst.title}`,
+    );
     const message = `[claudesquad] squash apply from ${inst.title}`;
     await squashMergeIntoHost(props.repoPath, inst.branch, message);
     // Retire the instance: kill tmux/worktree and drop from the list.
@@ -741,7 +748,7 @@ export function App(props: AppProps) {
       store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
       return;
     }
-    store.setInfo(t((m) => m.toast.applied)(inst.branch, hostBranch));
+    store.setInfo(t((m) => m.toast.applied)(inst.branch, hostBranch, autoCommitted));
     // Refresh every remaining instance — the host branch just moved
     // forward by one commit, so their `↓N` counters need to catch up.
     await Promise.all(
@@ -1484,8 +1491,16 @@ function confirmMessage(model: ReturnType<typeof createAppStore>['model']): stri
       return t((m) => m.confirm.pause)(name);
     case 'push':
       return t((m) => m.confirm.push)(inst?.branch ?? '');
-    case 'apply':
-      return t((m) => m.confirm.apply)(name, action.hostBranch);
+    case 'apply': {
+      const base = t((m) => m.confirm.apply)(name, action.hostBranch);
+      if (!action.dirty) return base;
+      // Mirror the merge overlay: tell the user we'll commit pending
+      // edits onto the instance branch before the squash, so the toast
+      // afterwards isn't the first place they learn about it.
+      const warn = t((m) => m.merge.dirtyWarn);
+      const detail = t((m) => m.merge.dirtyDetail)(inst?.branch ?? '');
+      return `${base}\n\n${warn}\n${detail}`;
+    }
   }
 }
 

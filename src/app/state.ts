@@ -88,7 +88,7 @@ export type ConfirmAction =
   | { kind: 'kill'; index: number }
   | { kind: 'pause'; index: number }
   | { kind: 'push'; index: number }
-  | { kind: 'apply'; index: number; hostBranch: string };
+  | { kind: 'apply'; index: number; hostBranch: string; dirty: boolean };
 
 export const initialModel: AppModel = {
   instances: [],
