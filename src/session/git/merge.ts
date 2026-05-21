@@ -129,6 +129,29 @@ export async function mergeIntoHost(hostPath: string, sourceBranch: string): Pro
 }
 
 /**
+ * Pull the just-created merge commit back into the worktree branch by
+ * fast-forwarding. Without this the worktree shows `↓1` immediately
+ * after merge — the merge commit lives only on host until something
+ * advances the source branch up to it.
+ *
+ * Safe because `mergeIntoHost` made the worktree's HEAD the second
+ * parent of the merge commit, so the worktree branch is by construction
+ * an ancestor of `hostBranch`. `--ff-only` therefore can never invent
+ * new content; it just bumps the ref (and may advance files if the
+ * merge folded in host-side changes the agent hadn't seen, which is
+ * the desired side effect).
+ */
+export async function fastForwardWorktreeToHost(
+  worktreePath: string,
+  hostBranch: string,
+): Promise<void> {
+  const r = await runGit(['-C', worktreePath, 'merge', '--ff-only', hostBranch]);
+  if (r.code !== 0) {
+    throw new Error((r.stderr || r.stdout).trim() || `git merge --ff-only ${hostBranch} failed`);
+  }
+}
+
+/**
  * Squash-merge `sourceBranch` into the host repo's current branch and commit
  * with a single message — the apply (`a`) flow. Conflict-safety: if the
  * squash leaves unmerged paths, we run `git reset --hard HEAD` to wipe the

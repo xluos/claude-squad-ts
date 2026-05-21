@@ -13,6 +13,7 @@ import {
   Switch,
 } from 'solid-js';
 import {
+  fastForwardWorktreeToHost,
   mergeIntoHost,
   precheckMerge,
   precheckSyncFromHost,
@@ -600,6 +601,22 @@ export function App(props: AppProps) {
         );
       }
       await mergeIntoHost(preview.hostPath, preview.sourceBranch);
+
+      // Pull the just-created merge commit back into the worktree so the
+      // row doesn't immediately show as `↓1` against host. Skipped when
+      // we're about to retire the instance (its worktree gets cleaned up
+      // anyway) and best-effort otherwise — the merge into host already
+      // succeeded, so we don't want a FF hiccup to overwrite that.
+      if (!preview.killAfter && inst) {
+        const wt = inst.worktreePath();
+        if (wt) {
+          try {
+            await fastForwardWorktreeToHost(wt, preview.hostBranch);
+          } catch (err) {
+            log.warn(`worktree FF to ${preview.hostBranch} failed: ${errMsg(err)}`);
+          }
+        }
+      }
 
       // Capital-M flow: retire the instance now that the work is on
       // the host branch. Lowercase-m leaves the agent running so the
