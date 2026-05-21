@@ -36,6 +36,8 @@ import {
   HELP_BIT_INSTANCE_CHECKOUT,
   HELP_BIT_INSTANCE_START,
   MAX_INSTANCES,
+  METADATA_TICK_DIVISOR_NON_SELECTED,
+  METADATA_TICK_DIVISOR_PAUSED,
   METADATA_TICK_MS,
 } from '../shared/constants.js';
 import { formatBlocker, t } from '../shared/i18n.js';
@@ -178,6 +180,22 @@ export function App(props: AppProps) {
         }
       }
       store.setInstances(loaded);
+      // `fromPersisted` doesn't restore commitStats — the field starts at
+      // {0,0}, which collapses the ↑/↓ segment until the next tick. Kick
+      // off an async refresh now so the initial render shows real values
+      // (matters for paused instances too: the tick still updates them,
+      // but the first frame would otherwise lie about "no divergence").
+      void (async () => {
+        const results = await Promise.all(
+          loaded.map((inst) =>
+            inst.computeCommitStats().then(
+              () => true,
+              () => false,
+            ),
+          ),
+        );
+        if (results.some(Boolean)) store.bumpRev();
+      })();
     } catch (err) {
       store.setError(errMsg(err));
     } finally {
@@ -202,18 +220,28 @@ export function App(props: AppProps) {
 
   // ===== Periodic metadata refresh =====
   //
-  // Each tick we (1) reconcile each instance's status with what tmux
-  // actually reports, and (2) recompute diff stats. After mutations we
-  // bump the model's `rev` counter so dependent Solid memos (which read
-  // instance-internal class fields invisible to the store) re-evaluate.
+  // Each tick we reconcile each instance's status with what tmux reports.
+  // Heavier git work (commitStats / diff / gitStatus) is throttled per row:
+  //   - selected instance: every tick (responsive while the user looks at it)
+  //   - non-selected active: every METADATA_TICK_DIVISOR_NON_SELECTED ticks
+  //   - paused: every METADATA_TICK_DIVISOR_PAUSED ticks, commitStats only
+  // After mutations we bump the model's `rev` counter so dependent Solid
+  // memos (which read instance-internal class fields invisible to the
+  // store) re-evaluate. Operations that need fresh numbers immediately
+  // (merge / sync / apply) call computeCommitStats + bumpRev directly
+  // rather than waiting for a tick.
   onMount(() => {
+    let tickCount = 0;
     const id = setInterval(() => {
       void (async () => {
+        tickCount++;
         const insts = store.model.instances;
         let dirty = false;
         for (let i = 0; i < insts.length; i++) {
           const inst = insts[i]!;
           if (!inst.hasStarted()) continue;
+          // checkAlive every tick — tmux death should surface quickly,
+          // and it's cheap (no git, just a tmux has-session check).
           const prevStatus = inst.status;
           try {
             await inst.checkAlive();
@@ -221,20 +249,34 @@ export function App(props: AppProps) {
             // ignore
           }
           if (inst.status !== prevStatus) dirty = true;
-          if (inst.isPaused() || !inst.hasStarted()) continue;
-          try {
-            const prev = `${inst.diffStats.added}|${inst.diffStats.removed}`;
-            if (i === store.model.selected) await inst.computeDiff();
-            else await inst.computeDiffNumstat();
-            const next = `${inst.diffStats.added}|${inst.diffStats.removed}`;
-            if (prev !== next) dirty = true;
-          } catch {
-            // ignore transient git errors
-          }
+
+          const isSelected = i === store.model.selected;
+          const isPaused = inst.isPaused();
+          const divisor = isSelected
+            ? 1
+            : isPaused
+              ? METADATA_TICK_DIVISOR_PAUSED
+              : METADATA_TICK_DIVISOR_NON_SELECTED;
+          if (tickCount % divisor !== 0) continue;
+
+          // commitStats runs in the host repo (`git -C repo_path rev-list`)
+          // and doesn't touch the worktree dir, so it stays meaningful even
+          // when the instance is paused — e.g. the user merged the branch
+          // from outside and ↑/↓ should drop to zero.
           try {
             const prev = `${inst.commitStats.ahead}|${inst.commitStats.behind}`;
             await inst.computeCommitStats();
             const next = `${inst.commitStats.ahead}|${inst.commitStats.behind}`;
+            if (prev !== next) dirty = true;
+          } catch {
+            // ignore transient git errors
+          }
+          if (isPaused) continue;
+          try {
+            const prev = `${inst.diffStats.added}|${inst.diffStats.removed}`;
+            if (isSelected) await inst.computeDiff();
+            else await inst.computeDiffNumstat();
+            const next = `${inst.diffStats.added}|${inst.diffStats.removed}`;
             if (prev !== next) dirty = true;
           } catch {
             // ignore transient git errors

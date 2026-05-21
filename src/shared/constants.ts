@@ -15,7 +15,19 @@ export const TMUX_HISTORY_LIMIT = 10_000;
 
 // Timing
 export const PREVIEW_TICK_MS = 100;
-export const METADATA_TICK_MS = 500;
+// Base metadata tick. Selected instance refreshes every tick; non-selected
+// and paused instances are throttled (see TICK_DIVISOR_* below) since their
+// numbers move much slower from the user's perspective. Tuning this trades
+// responsiveness for git subprocess load (~4 git spawns per refreshed
+// instance per tick).
+export const METADATA_TICK_MS = 1000;
+// How many ticks between refreshes for non-selected active instances.
+// 10 × 1s = ~10s lag for ↑/↓ + status on background rows.
+export const METADATA_TICK_DIVISOR_NON_SELECTED = 10;
+// Paused instances only refresh commitStats (worktree dir is gone, so
+// diff/gitStatus would fail). 30 × 1s = ~30s lag — fine because the only
+// thing that changes for a paused row is the user merging from outside.
+export const METADATA_TICK_DIVISOR_PAUSED = 30;
 export const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 export const ERROR_DISMISS_MS = 3000;
 export const MENU_KEY_HIGHLIGHT_MS = 500;
