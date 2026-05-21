@@ -167,33 +167,29 @@ function Row(props: RowProps) {
           {iconFor(status())}
         </text>
       </box>
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        backgroundColor={bg()}
-      >
-        <text fg={branchFg()} bg={bg()}>
-          {` ${branch()}`}
-        </text>
-        {/* Starship-style status segments. Renders nothing when the working
-         *  tree is clean AND the branch is synced — the same collapse
-         *  behaviour as the user's prompt: `[git_status]` block hides on a
-         *  clean+up-to-date repo. Segments come from `gitStatus` (computed
-         *  from porcelain=v2 — see git/status.ts for the intent-to-add
-         *  reclassification trick) and `commitStats`. */}
-        <Show when={statusSegments().length > 0}>
-          <box flexDirection="row" backgroundColor={bg()} gap={1}>
-            <For each={statusSegments()}>
-              {(seg) => (
-                <text fg={seg.fg} bg={bg()}>
-                  {seg.text}
-                </text>
-              )}
-            </For>
-          </box>
-        </Show>
-      </box>
+      <text fg={branchFg()} bg={bg()}>
+        {branch()}
+      </text>
+      {/* Starship-style status segments on their own line, prefixed with a
+       *  muted `Git` label so it reads like a footer status chip. Whole row
+       *  collapses when the working tree is clean AND the branch is synced —
+       *  the same behaviour as the user's prompt's `[git_status]` block.
+       *  Segments come from `gitStatus` (porcelain=v2, see git/status.ts)
+       *  and `commitStats`. */}
+      <Show when={statusSegments().length > 0}>
+        <box flexDirection="row" backgroundColor={bg()} gap={1}>
+          <text fg={colors.muted} bg={bg()}>
+            Git
+          </text>
+          <For each={statusSegments()}>
+            {(seg) => (
+              <text fg={seg.fg} bg={bg()}>
+                {seg.text}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
     </box>
   );
 }
