@@ -1,3 +1,4 @@
+import type { CommitMessageProvider } from './commit-hook.js';
 import { runGit } from './exec.js';
 
 /**
@@ -112,19 +113,50 @@ export async function precheckMerge(
 /**
  * Run the actual merge in the host repo. Always creates a merge commit
  * (`--no-ff`) so the integration point is preserved in history.
+ *
+ * With no `getMessage`, this is the original one-shot `git merge -m <built-in>`
+ * — zero behavioural change. With a hook, it splits into `merge --no-commit`
+ * (folds the result into the index so the hook can read the staged diff) →
+ * hook → `git commit`. Any failure runs `merge --abort` so the host repo is
+ * never left mid-merge.
  */
-export async function mergeIntoHost(hostPath: string, sourceBranch: string): Promise<void> {
-  const r = await runGit([
-    '-C',
-    hostPath,
-    'merge',
-    '--no-ff',
-    '-m',
-    `[claudesquad] merge ${sourceBranch}`,
-    sourceBranch,
-  ]);
-  if (r.code !== 0) {
-    throw new Error((r.stderr || r.stdout).trim() || `git merge ${sourceBranch} failed`);
+export async function mergeIntoHost(
+  hostPath: string,
+  sourceBranch: string,
+  getMessage?: CommitMessageProvider,
+): Promise<void> {
+  const fallback = `[claudesquad] merge ${sourceBranch}`;
+  if (!getMessage) {
+    const r = await runGit(['-C', hostPath, 'merge', '--no-ff', '-m', fallback, sourceBranch]);
+    if (r.code !== 0) {
+      throw new Error((r.stderr || r.stdout).trim() || `git merge ${sourceBranch} failed`);
+    }
+    return;
+  }
+
+  const mg = await runGit(['-C', hostPath, 'merge', '--no-ff', '--no-commit', sourceBranch]);
+  if (mg.code !== 0) {
+    await runGit(['-C', hostPath, 'merge', '--abort']);
+    throw new Error((mg.stderr || mg.stdout).trim() || `git merge ${sourceBranch} failed`);
+  }
+  // No MERGE_HEAD → "Already up to date": nothing to commit, mirror the
+  // one-shot path which also produces no commit in that case.
+  const mh = await runGit(['-C', hostPath, 'rev-parse', '--verify', '-q', 'MERGE_HEAD']);
+  if (mh.code !== 0) return;
+
+  let message: string;
+  try {
+    message = await getMessage(hostPath, fallback);
+  } catch (err) {
+    await runGit(['-C', hostPath, 'merge', '--abort']);
+    throw err;
+  }
+  const cm = await runGit(['-C', hostPath, 'commit', '-m', message]);
+  if (cm.code !== 0) {
+    await runGit(['-C', hostPath, 'merge', '--abort']);
+    throw new Error(
+      (cm.stderr || cm.stdout).trim() || `git commit on merge of ${sourceBranch} failed`,
+    );
   }
 }
 
@@ -164,6 +196,7 @@ export async function squashMergeIntoHost(
   hostPath: string,
   sourceBranch: string,
   message: string,
+  getMessage?: CommitMessageProvider,
 ): Promise<void> {
   const sq = await runGit(['-C', hostPath, 'merge', '--squash', sourceBranch]);
   if (sq.code !== 0) {
@@ -175,7 +208,19 @@ export async function squashMergeIntoHost(
   // "nothing to commit".
   const diff = await runGit(['-C', hostPath, 'diff', '--cached', '--quiet']);
   if (diff.code === 0) return;
-  const cm = await runGit(['-C', hostPath, 'commit', '-m', message]);
+  // The squash already staged everything, so the hook can read the diff now.
+  // On hook failure, `reset --hard HEAD` wipes the staged squash before we
+  // rethrow, leaving the host clean.
+  let finalMessage = message;
+  if (getMessage) {
+    try {
+      finalMessage = await getMessage(hostPath, message);
+    } catch (err) {
+      await runGit(['-C', hostPath, 'reset', '--hard', 'HEAD']);
+      throw err;
+    }
+  }
+  const cm = await runGit(['-C', hostPath, 'commit', '-m', finalMessage]);
   if (cm.code !== 0) {
     await runGit(['-C', hostPath, 'reset', '--hard', 'HEAD']);
     throw new Error((cm.stderr || cm.stdout).trim() || 'failed to commit squash result');
@@ -272,17 +317,43 @@ export async function precheckSyncFromHost(
  * the TUI offers no resolution UI, so a half-merged worktree is worse
  * than no merge at all.
  */
-export async function syncFromHost(worktreePath: string, hostBranch: string): Promise<void> {
-  const r = await runGit([
-    '-C',
-    worktreePath,
-    'merge',
-    '-m',
-    `[claudesquad] sync ${hostBranch}`,
-    hostBranch,
-  ]);
-  if (r.code !== 0) {
+export async function syncFromHost(
+  worktreePath: string,
+  hostBranch: string,
+  getMessage?: CommitMessageProvider,
+): Promise<void> {
+  const fallback = `[claudesquad] sync ${hostBranch}`;
+  if (!getMessage) {
+    const r = await runGit(['-C', worktreePath, 'merge', '-m', fallback, hostBranch]);
+    if (r.code !== 0) {
+      await runGit(['-C', worktreePath, 'merge', '--abort']);
+      throw new Error((r.stderr || r.stdout).trim() || `git merge ${hostBranch} failed`);
+    }
+    return;
+  }
+
+  const mg = await runGit(['-C', worktreePath, 'merge', '--no-commit', hostBranch]);
+  if (mg.code !== 0) {
     await runGit(['-C', worktreePath, 'merge', '--abort']);
-    throw new Error((r.stderr || r.stdout).trim() || `git merge ${hostBranch} failed`);
+    throw new Error((mg.stderr || mg.stdout).trim() || `git merge ${hostBranch} failed`);
+  }
+  // Fast-forward or already-up-to-date → no MERGE_HEAD, no commit to make
+  // (matches the default-merge path, which FFs without a message too).
+  const mh = await runGit(['-C', worktreePath, 'rev-parse', '--verify', '-q', 'MERGE_HEAD']);
+  if (mh.code !== 0) return;
+
+  let message: string;
+  try {
+    message = await getMessage(worktreePath, fallback);
+  } catch (err) {
+    await runGit(['-C', worktreePath, 'merge', '--abort']);
+    throw err;
+  }
+  const cm = await runGit(['-C', worktreePath, 'commit', '-m', message]);
+  if (cm.code !== 0) {
+    await runGit(['-C', worktreePath, 'merge', '--abort']);
+    throw new Error(
+      (cm.stderr || cm.stdout).trim() || `git commit on sync of ${hostBranch} failed`,
+    );
   }
 }

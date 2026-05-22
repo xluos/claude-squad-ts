@@ -8,6 +8,7 @@ import {
   type LLMConfig,
   Status,
 } from '../shared/types.js';
+import type { CommitMessageProvider } from './git/commit-hook.js';
 import { hasInitialCommit, isGitRepo } from './git/util.js';
 import {
   type CommitCounts,
@@ -219,10 +220,10 @@ export class Instance {
    * so the agent's in-flight edits don't get stranded as "dirty but
    * not on any branch".
    */
-  async commitDirty(msg: string): Promise<boolean> {
+  async commitDirty(msg: string, getMessage?: CommitMessageProvider): Promise<boolean> {
     if (!this.worktree) return false;
     if (!(await this.worktree.isDirty())) return false;
-    await this.worktree.commit(msg);
+    await this.worktree.commit(msg, getMessage);
     return true;
   }
 

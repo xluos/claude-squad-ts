@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { projectWorktreesRoot } from '../../shared/paths.js';
 import type { DiffStats, GitStatus, WorktreeData } from '../../shared/types.js';
+import type { CommitMessageProvider } from './commit-hook.js';
 import { computeDiff, computeDiffNumstat } from './diff.js';
 import { ensureOk, runCmd, runGit } from './exec.js';
 import { computeGitStatus } from './status.js';
@@ -49,7 +50,7 @@ export interface Worktree {
   isDirty(): Promise<boolean>;
   isValid(): Promise<boolean>;
   isBranchCheckedOut(): Promise<boolean>;
-  commit(msg: string): Promise<void>;
+  commit(msg: string, getMessage?: CommitMessageProvider): Promise<void>;
   pushAndOpen(msg: string, open: boolean): Promise<void>;
 }
 
@@ -236,14 +237,18 @@ function buildWorktree(data: WorktreeData): Worktree {
       return r.code === 0 && r.stdout.trim() === data.branch_name;
     },
 
-    async commit(msg: string): Promise<void> {
+    async commit(msg: string, getMessage?: CommitMessageProvider): Promise<void> {
       ensureOk('git', ['add', '.'], await runGit(['-C', data.worktree_path, 'add', '.']));
       const status = await runGit(['-C', data.worktree_path, 'status', '--porcelain']);
       if (status.stdout.trim().length === 0) return; // nothing to commit
+      // Everything is staged now, so the hook can read the staged diff. A
+      // throwing hook aborts the commit (the add is harmless to leave; the
+      // worktree files are untouched and a later commit re-stages them).
+      const finalMsg = getMessage ? await getMessage(data.worktree_path, msg) : msg;
       ensureOk(
         'git',
-        ['commit', '-m', msg, '--no-verify'],
-        await runGit(['-C', data.worktree_path, 'commit', '-m', msg, '--no-verify']),
+        ['commit', '-m', finalMsg, '--no-verify'],
+        await runGit(['-C', data.worktree_path, 'commit', '-m', finalMsg, '--no-verify']),
       );
     },
 

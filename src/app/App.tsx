@@ -12,6 +12,7 @@ import {
   Show,
   Switch,
 } from 'solid-js';
+import { makeCommitMessageProvider } from '../session/git/commit-hook.js';
 import {
   fastForwardWorktreeToHost,
   mergeIntoHost,
@@ -598,9 +599,14 @@ export function App(props: AppProps) {
       if (inst) {
         autoCommitted = await inst.commitDirty(
           `[claudesquad] auto-commit on merge of ${inst.title}`,
+          makeCommitMessageProvider(props.config, 'autoCommit'),
         );
       }
-      await mergeIntoHost(preview.hostPath, preview.sourceBranch);
+      await mergeIntoHost(
+        preview.hostPath,
+        preview.sourceBranch,
+        makeCommitMessageProvider(props.config, 'merge'),
+      );
 
       // Pull the just-created merge commit back into the worktree so the
       // row doesn't immediately show as `↓1` against host. Skipped when
@@ -683,7 +689,7 @@ export function App(props: AppProps) {
         store.setError(t((m) => m.toast.syncConflicts)(baseBranch, pre.conflicts.length));
         return;
       }
-      await syncFromHost(worktreePath, baseBranch);
+      await syncFromHost(worktreePath, baseBranch, makeCommitMessageProvider(props.config, 'sync'));
       // Refresh commit stats so the ↑↓ chip reflects the new state
       // before the next metadata tick runs.
       await inst.computeCommitStats().catch(() => undefined);
@@ -735,9 +741,15 @@ export function App(props: AppProps) {
     // about to delete.
     const autoCommitted = await inst.commitDirty(
       `[claudesquad] auto-commit on apply of ${inst.title}`,
+      makeCommitMessageProvider(props.config, 'autoCommit'),
     );
     const message = `[claudesquad] squash apply from ${inst.title}`;
-    await squashMergeIntoHost(props.repoPath, inst.branch, message);
+    await squashMergeIntoHost(
+      props.repoPath,
+      inst.branch,
+      message,
+      makeCommitMessageProvider(props.config, 'squashApply'),
+    );
     // Retire the instance: kill tmux/worktree and drop from the list.
     // Failure here doesn't unwind the squash (that's already committed) —
     // surface as a separate error so the success isn't swallowed.

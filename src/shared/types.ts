@@ -148,6 +148,47 @@ export interface LLMConfig {
   enable_thinking?: boolean;
 }
 
+/**
+ * The commit points where a message hook can fire. Each maps to a place
+ * the app would otherwise commit with a hard-coded `[claudesquad] …` line:
+ *  - `merge`       → the `m`/`M` merge commit on the host branch
+ *  - `squashApply` → the single squash commit of the `a` (apply) flow
+ *  - `autoCommit`  → folding the worktree's dirty edits before merge/apply
+ *  - `sync`        → the reverse merge commit when syncing host → worktree
+ */
+export type CommitPoint = 'merge' | 'squashApply' | 'autoCommit' | 'sync';
+
+/**
+ * One commit-message hook. The program is spawned as an argv array (no
+ * shell) with cwd set to the repo/worktree being committed, *after* the
+ * changes are staged but *before* the commit — so it can read the staged
+ * diff itself (e.g. `git diff --cached`). Its stdout is taken verbatim as
+ * the commit message. A non-zero exit, a timeout, or empty stdout aborts
+ * the operation (nothing is committed).
+ */
+export interface CommitHookSpec {
+  /** Program + args, e.g. `["commitmsg"]` or `["commitmsg", "--lang", "en"]`. */
+  command?: string[];
+  /** Off switch. Defaults to true when a command is present; set false to
+   *  disable a point the general config would otherwise apply. */
+  enabled?: boolean;
+  /** Seconds before the hook is killed and the operation aborts. Default 30. */
+  timeout?: number;
+}
+
+/**
+ * Commit-message hook config. The top-level fields apply to *every* commit
+ * point; `overrides` tune or disable individual points and take precedence
+ * over the general config.
+ */
+export interface CommitMessageHook extends CommitHookSpec {
+  overrides?: Partial<Record<CommitPoint, CommitHookSpec>>;
+}
+
+export interface HooksConfig {
+  commit_message?: CommitMessageHook;
+}
+
 export interface AppConfig {
   default_program: string;
   auto_yes: boolean;
@@ -159,4 +200,8 @@ export interface AppConfig {
   language?: 'en' | 'zh' | 'auto';
   profiles?: Profile[];
   llm?: LLMConfig;
+  /** External hooks. Currently only `commit_message`: delegate commit
+   *  message generation at merge/apply/sync/auto-commit points to a local
+   *  program. Absent (the default) → built-in `[claudesquad] …` messages. */
+  hooks?: HooksConfig;
 }
