@@ -139,6 +139,94 @@ cs reset            # 清空**当前项目**保存的实例
 
 定义了多个 profile 后，新建会话的 overlay 会显示 profile 选择器，`tab` 切换。
 
+### commit message 钩子（hooks）
+
+默认情况下，集成相关的几个流程会用写死的 `[claudesquad] …` 文案提交。你可以把文案生成委托给一个外部程序（比如某个 AI commit 信息工具），覆盖四个 commit 点位：
+
+| 点位          | 提交的是什么                                                     |
+| ------------- | --------------------------------------------------------------- |
+| `merge`       | `m` / `M` 合并到主分支的 merge commit                           |
+| `squashApply` | `a`（apply）流程里 squash 出的那一个 commit                     |
+| `autoCommit`  | merge / apply 前，折叠工作树脏改动的那次自动提交                |
+| `sync`        | `u` 从 host 反向同步到 worktree 的 merge commit                |
+
+钩子运行时 **cwd 设为正在提交的那个仓库 / worktree，且改动已经 stage、尚未 commit**，所以程序自己读暂存区即可（比如 `git diff --cached`）。它的 **stdout 会被原样当作 commit message**。
+
+```jsonc
+{
+  "hooks": {
+    "commit_message": {
+      "command": ["commitmsg"],   // argv 数组，无 shell 直接 spawn；应用到所有点位
+      "timeout": 30,               // 秒；默认 30
+      "overrides": {               // 单点位覆盖 —— 优先级高于通用配置
+        "sync": { "enabled": false },                            // 单独关掉某个点位
+        "squashApply": { "command": ["commitmsg", "--squash"] }  // 单独给某个点位换命令
+      }
+    }
+  }
+}
+```
+
+- 完全不写 `hooks`（默认）→ 保持内置 `[claudesquad] …` 文案，行为不变。
+- **非零退出 / 超时 / 空输出都会中止本次操作** —— 不提交任何东西，仓库会回滚（`git merge --abort` / `reset --hard HEAD`），不会卡在合并到一半的状态。修好钩子再重试即可。
+- 有 `command` 时 `enabled` 默认 `true`；设成 `false`（通用或单点位）即可关闭。
+
+> `pause` 的自动提交（`[claudesquad] auto-commit on pause of …`）**故意不走**钩子：暂停是高频生命周期操作，外部钩子在这里失败会把"暂停一定成功"变成"暂停可能失败"。
+
+## 远程控制（在飞书 / 手机上操作会话）
+
+claude-squad 的每个会话本质就是一个跑着 agent CLI 的 tmux pane。把这个 program 换成 [`agent-remote-core`](https://github.com/xluos/agent-remote-core) 的前台 server，每个会话就会额外发布一份结构化的终端快照 —— [`agent-remote`](https://github.com/xluos/agent-remote) 的飞书 bridge（也就是 `cla` / `cl` / `cx` 快捷命令背后的同一套后端）能读这份快照并反向操作。于是你离开电脑后，还能在手机上盯着、回复正在跑的 agent。
+
+这套方案取代了老的 `claude-squad-ts-remote` 镜像 daemon（现已[归档](https://github.com/xluos/claude-squad-ts-remote)）—— 现在桥接是零成本的，不用再单独守一个进程。
+
+```
+  claude-squad tmux pane
+    └─ agent-remote-core serve --foreground   ← 透明地跑你的 claude/codex
+         ├─ stdout 透传  → claude-squad 的 Preview tab（照常显示）
+         └─ pyte 快照    → /tmp/remote-claude/<session>.mq （mmap + unix socket）
+                              ▲
+                              └─ agent-remote 飞书 bridge → 手机上的卡片
+```
+
+**配置步骤**
+
+1. 装 daemon（Python ≥ 3.9）：
+
+   ```bash
+   pip install agent-remote-core
+   # 或：uv tool install agent-remote-core
+   ```
+
+2. 把 claude-squad 的 program 指向前台 server。在 claude-squad 的 tmux pane 里运行时，它会自动用 tmux session 名作为 daemon session 名，默认跑 `claude`：
+
+   ```jsonc
+   {
+     "default_program": "agent-remote-core serve --foreground"
+   }
+   ```
+
+   要跑 Codex、或者混用多个 agent，用 profiles：
+
+   ```jsonc
+   {
+     "profiles": [
+       { "name": "claude", "program": "agent-remote-core serve --foreground" },
+       { "name": "codex",  "program": "agent-remote-core serve --foreground --cli-type codex" }
+     ]
+   }
+   ```
+
+3. 配置并启动飞书 bridge（一次性向导，约 5 分钟），来自 [`agent-remote`](https://github.com/xluos/agent-remote)：
+
+   ```bash
+   agent-remote lark init      # 向导：创建机器人应用、开权限、写配置
+   agent-remote lark start     # 后台跑起 bridge
+   ```
+
+4. 在飞书里打开机器人，发 `/list` 看到你的 `claudesquad_*` 会话，再 `/attach <会话名>` 就能看实时输出、点选项 / 权限按钮 —— 和 `cla` 体验一致，只不过操作的是 claude-squad 起的会话。
+
+如果你想自己做面板而不用飞书，这套 PTY 宿主运行时也能单独用 TypeScript [`@agent-remote/sdk`](https://www.npmjs.com/package/@agent-remote/sdk) 消费。
+
 ## 磁盘布局
 
 ```

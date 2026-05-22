@@ -139,6 +139,94 @@ You can define multiple named programs and switch between them when creating a n
 
 When more than one profile is defined, the new-session overlay shows a profile picker you cycle with `tab`.
 
+### Commit message hooks
+
+By default the integration flows commit with fixed `[claudesquad] …` messages. You can delegate message generation to an external program (e.g. an AI commit-message tool) at four commit points:
+
+| Point         | What it commits                                                    |
+| ------------- | ----------------------------------------------------------------- |
+| `merge`       | the `m` / `M` merge commit on the host branch                     |
+| `squashApply` | the single squash commit of the `a` (apply) flow                  |
+| `autoCommit`  | folding the worktree's dirty edits before a merge / apply         |
+| `sync`        | the reverse merge commit when syncing host → worktree (`u`)       |
+
+The hook runs **with cwd set to the repo/worktree being committed, after the changes are staged but before the commit**, so it can read the staged diff itself (e.g. `git diff --cached`). Its **stdout is taken verbatim as the commit message**.
+
+```jsonc
+{
+  "hooks": {
+    "commit_message": {
+      "command": ["commitmsg"],   // argv array, spawned without a shell; applies to all points
+      "timeout": 30,               // seconds; default 30
+      "overrides": {               // per-point tweaks — win over the general config
+        "sync": { "enabled": false },                            // turn one point off
+        "squashApply": { "command": ["commitmsg", "--squash"] }  // different command for one point
+      }
+    }
+  }
+}
+```
+
+- Omit `hooks` entirely (the default) → keeps the built-in `[claudesquad] …` messages, behaviour unchanged.
+- A **non-zero exit, a timeout, or empty stdout aborts the operation** — nothing is committed and the repo is rolled back (`git merge --abort` / `reset --hard HEAD`), so you never end up mid-merge. Fix the hook and retry.
+- `enabled` defaults to `true` when a command is present; set it `false` (generally or per-point) to disable.
+
+> The `pause` auto-commit (`[claudesquad] auto-commit on pause of …`) deliberately does **not** run the hook: pausing is a frequent lifecycle action, and an external hook failing there would turn "pause always works" into "pause can fail".
+
+## Remote control (drive sessions from Feishu / your phone)
+
+claude-squad sessions are just tmux panes running your agent CLI. By swapping the program for [`agent-remote-core`](https://github.com/xluos/agent-remote-core)'s foreground server, every session also publishes a structured terminal snapshot — which the [`agent-remote`](https://github.com/xluos/agent-remote) Feishu bridge (the same backend behind the `cla` / `cl` / `cx` shortcuts) can read and drive. So you can leave your laptop and keep watching / replying to a running agent from your phone.
+
+This replaces the old `claude-squad-ts-remote` mirror daemon, which is now [archived](https://github.com/xluos/claude-squad-ts-remote) — the bridge is zero-cost now, no separate process to babysit.
+
+```
+  claude-squad tmux pane
+    └─ agent-remote-core serve --foreground   ← runs your claude/codex, transparently
+         ├─ stdout passthrough  → claude-squad's Preview tab (unchanged)
+         └─ pyte snapshot       → /tmp/remote-claude/<session>.mq  (mmap + unix socket)
+                                      ▲
+                                      └─ agent-remote Feishu bridge → cards on your phone
+```
+
+**Setup**
+
+1. Install the daemon (Python ≥ 3.9):
+
+   ```bash
+   pip install agent-remote-core
+   # or: uv tool install agent-remote-core
+   ```
+
+2. Point claude-squad's program at the foreground server. Inside a claude-squad tmux pane it auto-uses the tmux session name as the daemon session name and runs `claude` by default:
+
+   ```jsonc
+   {
+     "default_program": "agent-remote-core serve --foreground"
+   }
+   ```
+
+   For Codex, or to mix agents, use profiles:
+
+   ```jsonc
+   {
+     "profiles": [
+       { "name": "claude", "program": "agent-remote-core serve --foreground" },
+       { "name": "codex",  "program": "agent-remote-core serve --foreground --cli-type codex" }
+     ]
+   }
+   ```
+
+3. Set up and start the Feishu bridge (one-time wizard, ~5 min), from [`agent-remote`](https://github.com/xluos/agent-remote):
+
+   ```bash
+   agent-remote lark init      # wizard: create the bot app, grant scopes, write config
+   agent-remote lark start     # run the bridge in the background
+   ```
+
+4. In Feishu, open the bot and send `/list` to see your `claudesquad_*` sessions, then `/attach <session>` to view its live output and tap option / permission buttons — same as the `cla` experience, but for sessions claude-squad spawned.
+
+The PTY-host runtime is reusable on its own via the TypeScript [`@agent-remote/sdk`](https://www.npmjs.com/package/@agent-remote/sdk) if you want to build a custom dashboard instead of using Feishu.
+
 ## On-disk layout
 
 ```
