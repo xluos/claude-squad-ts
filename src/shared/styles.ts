@@ -63,7 +63,7 @@ export const colors = {
   // light enough for dark text to sit on it cleanly. Slightly deeper than
   // the Go reference's #d8ddf8 so saturated yellow / amber glyphs
   // (`↓N`, loading icon) keep enough contrast on top.
-  selectedBg: '#d8ddf8',
+  selectedBg: '#9c97cb',
   selectedFg: '#1a1a1a',
   // Solid fill for modal overlay bodies — opaque so the panel masks
   // whatever sits underneath it, while the surrounding screen stays

@@ -56,7 +56,8 @@ export async function translateToEnglishId(
 
   try {
     const start = Date.now();
-    const resp = await fetch(llm.base_url, {
+    const url = `${llm.base_url.replace(/\/+$/, '')}/chat/completions`;
+    const resp = await fetch(url, {
       method: 'POST',
       signal: controller.signal,
       headers: {
