@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { log } from '../../shared/logger.js';
 import type { AppConfig, CommitPoint } from '../../shared/types.js';
+import { runGit } from './exec.js';
 
 /** A resolved, runnable hook for one commit point. */
 interface ResolvedHook {
@@ -47,7 +48,14 @@ export function makeCommitMessageProvider(
 ): CommitMessageProvider | undefined {
   const hook = resolveCommitHook(cfg, point);
   if (!hook) return undefined;
-  return (cwd, _fallback) => runCommitHook(hook, cwd, point);
+  return async (cwd, fallback) => {
+    const diff = await runGit(['-C', cwd, 'diff', '--cached', '--quiet']);
+    if (diff.code === 0) {
+      log.info(`skip commit-message hook for ${point}: staging area is empty`);
+      return fallback;
+    }
+    return runCommitHook(hook, cwd, point);
+  };
 }
 
 function runCommitHook(hook: ResolvedHook, cwd: string, point: CommitPoint): Promise<string> {

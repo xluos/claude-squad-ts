@@ -15,7 +15,7 @@ export type MergeBlocker =
   | { kind: 'worktreeOnHostBranch'; branch: string }
   | { kind: 'hostBranchMissing'; branch: string }
   | { kind: 'mergePrecheckFailed'; detail: string }
-  | { kind: 'syncPrecheckFailed'; detail: string };
+  | { kind: 'pullPrecheckFailed'; detail: string };
 
 /**
  * Outcome of the merge precheck. Exactly one of these is true:
@@ -231,10 +231,10 @@ export async function squashMergeIntoHost(
  * Mirror of `precheckMerge` for the reverse direction: ask whether merging
  * the host's current branch *down into the worktree* would succeed cleanly.
  * Uses `git merge-tree` so neither the worktree files nor its index are
- * touched. The caller decides what to do with conflicts — for the sync flow
+ * touched. The caller decides what to do with conflicts — for the pull flow
  * we just toast and bail instead of opening a resolution overlay.
  */
-export async function precheckSyncFromHost(
+export async function precheckPullFromHost(
   worktreePath: string,
   hostBranch: string,
 ): Promise<MergePrecheck> {
@@ -304,7 +304,7 @@ export async function precheckSyncFromHost(
       clean: false,
       hostBranch: worktreeBranch,
       conflicts: [],
-      blocker: { kind: 'syncPrecheckFailed', detail: (mtR.stderr || mtR.stdout).trim() },
+      blocker: { kind: 'pullPrecheckFailed', detail: (mtR.stderr || mtR.stdout).trim() },
     };
   }
   return { clean: false, hostBranch: worktreeBranch, conflicts };
@@ -317,12 +317,12 @@ export async function precheckSyncFromHost(
  * the TUI offers no resolution UI, so a half-merged worktree is worse
  * than no merge at all.
  */
-export async function syncFromHost(
+export async function pullFromHost(
   worktreePath: string,
   hostBranch: string,
   getMessage?: CommitMessageProvider,
 ): Promise<void> {
-  const fallback = `[claudesquad] sync ${hostBranch}`;
+  const fallback = `[claudesquad] pull ${hostBranch}`;
   if (!getMessage) {
     const r = await runGit(['-C', worktreePath, 'merge', '-m', fallback, hostBranch]);
     if (r.code !== 0) {
@@ -353,7 +353,7 @@ export async function syncFromHost(
   if (cm.code !== 0) {
     await runGit(['-C', worktreePath, 'merge', '--abort']);
     throw new Error(
-      (cm.stderr || cm.stdout).trim() || `git commit on sync of ${hostBranch} failed`,
+      (cm.stderr || cm.stdout).trim() || `git commit on pull of ${hostBranch} failed`,
     );
   }
 }

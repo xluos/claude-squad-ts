@@ -17,9 +17,9 @@ import {
   fastForwardWorktreeToHost,
   mergeIntoHost,
   precheckMerge,
-  precheckSyncFromHost,
+  precheckPullFromHost,
+  pullFromHost,
   squashMergeIntoHost,
-  syncFromHost,
 } from '../session/git/merge.js';
 import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
@@ -230,7 +230,7 @@ export function App(props: AppProps) {
   // After mutations we bump the model's `rev` counter so dependent Solid
   // memos (which read instance-internal class fields invisible to the
   // store) re-evaluate. Operations that need fresh numbers immediately
-  // (merge / sync / apply) call computeCommitStats + bumpRev directly
+  // (merge / pull / apply) call computeCommitStats + bumpRev directly
   // rather than waiting for a tick.
   onMount(() => {
     let tickCount = 0;
@@ -296,6 +296,19 @@ export function App(props: AppProps) {
         }
         if (dirty) store.bumpRev();
         await refreshTmuxInfos();
+
+        // Auto-pull: when enabled, trigger `u`-equivalent for running
+        // instances that have fallen behind and can be pulled cleanly.
+        if (props.config.auto_pull) {
+          for (const inst of insts) {
+            if (inst.isPaused() || inst.busy) continue;
+            if (inst.commitStats.behind <= 0) continue;
+            const wt = inst.worktreePath();
+            const base = inst.baseBranch();
+            if (!wt || !base) continue;
+            void autoPullInstance(inst, wt, base);
+          }
+        }
       })();
     }, METADATA_TICK_MS);
     onCleanup(() => clearInterval(id));
@@ -516,34 +529,28 @@ export function App(props: AppProps) {
       })();
       return;
     }
+    if (seq === 'm' || seq === 'M' || seq === 'u' || seq === 'a') {
+      if (selected.busy) {
+        store.setError(t((m) => m.toast.instanceBusy));
+        return;
+      }
+    }
     if (seq === 'm') {
       store.setPressedKey('m');
       void openMergeFlow(store.model.selected, selected, false);
       return;
     }
     if (seq === 'M') {
-      // Capital M = "merge & retire": after a successful merge, the
-      // worktree's job is done — kill the instance so the user doesn't
-      // have to chase down `d` afterward. Lowercase m leaves the agent
-      // running (Go-version-compatible default).
       store.setPressedKey('M');
       void openMergeFlow(store.model.selected, selected, true);
       return;
     }
     if (seq === 'u') {
-      // u = sync host's current branch *down* into the worktree. No
-      // overlay — precheck via merge-tree, fold in cleanly or toast why
-      // we couldn't. Symmetric counterpart to `m` (merge up to host).
       store.setPressedKey('u');
-      void runSyncFromHost(selected);
+      void runPullFromHost(selected);
       return;
     }
     if (seq === 'a') {
-      // a = apply: squash the whole instance branch into the host's
-      // current branch as a single commit, then retire the instance.
-      // Distinct from `M` (merge & retire) which preserves the full
-      // commit history. Always behind a confirm overlay — it both
-      // mutates host history *and* deletes the instance.
       store.setPressedKey('a');
       void openApplyFlow(store.model.selected, selected);
       return;
@@ -560,10 +567,11 @@ export function App(props: AppProps) {
       return;
     }
     try {
-      // Run precheck (against branch HEAD) and dirty check in parallel —
-      // both are read-only on the underlying repos. `dirty` then lets
-      // the overlay warn the user that confirming will auto-commit
-      // pending edits before merging, instead of silently doing it.
+      await inst.computeCommitStats().catch(() => undefined);
+      if (inst.commitStats.ahead === 0 && !(await inst.isDirty().catch(() => false))) {
+        store.setError(t((m) => m.toast.nothingToMerge));
+        return;
+      }
       const [result, dirty] = await Promise.all([
         precheckMerge(props.repoPath, inst.branch),
         inst.isDirty().catch(() => false),
@@ -589,12 +597,11 @@ export function App(props: AppProps) {
     if (!preview) return;
     const inst = store.model.instances[preview.index];
     store.closeOverlay();
+    if (inst) {
+      inst.busy = true;
+      store.bumpRev();
+    }
     try {
-      // Merge folds branch history into the host. Agent edits that are
-      // still uncommitted in the worktree wouldn't make it across —
-      // they'd be stranded as "dirty but unmerged" once we tell the
-      // user the merge is done. Mirror pause()'s auto-commit so what
-      // the user sees in Preview is what lands in the host branch.
       let autoCommitted = false;
       if (inst) {
         autoCommitted = await inst.commitDirty(
@@ -608,11 +615,6 @@ export function App(props: AppProps) {
         makeCommitMessageProvider(props.config, 'merge'),
       );
 
-      // Pull the just-created merge commit back into the worktree so the
-      // row doesn't immediately show as `↓1` against host. Skipped when
-      // we're about to retire the instance (its worktree gets cleaned up
-      // anyway) and best-effort otherwise — the merge into host already
-      // succeeded, so we don't want a FF hiccup to overwrite that.
       if (!preview.killAfter && inst) {
         const wt = inst.worktreePath();
         if (wt) {
@@ -624,9 +626,8 @@ export function App(props: AppProps) {
         }
       }
 
-      // Capital-M flow: retire the instance now that the work is on
-      // the host branch. Lowercase-m leaves the agent running so the
-      // user can keep iterating from the same session.
+      if (inst) await inst.updateDiffBase().catch(() => undefined);
+
       let retired = false;
       if (preview.killAfter && inst) {
         try {
@@ -634,37 +635,35 @@ export function App(props: AppProps) {
           store.removeInstance(inst.title);
           retired = true;
         } catch (err) {
-          // Surface as a separate error — the merge itself succeeded,
-          // so we don't want to swallow that good outcome.
           store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
         }
       }
+      if (inst) inst.busy = false;
       store.setInfo(
         t((m) => m.toast.merged)(preview.sourceBranch, preview.hostBranch, autoCommitted, retired),
       );
-      // The host branch just moved forward by at least one merge commit, so
-      // every remaining instance cut from the same fork point is now further
-      // "behind". Refresh all rows so the ↓N in the list reflects reality
-      // before the next metadata tick runs.
       if (!retired) {
+        await inst?.computeDiff().catch(() => undefined);
         await Promise.all(
           store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
         );
         store.bumpRev();
       }
     } catch (err) {
+      if (inst) inst.busy = false;
       store.setError(errMsg(err));
+      store.bumpRev();
     }
   }
 
-  // ===== Sync from host =====
+  // ===== Pull from host =====
   // Reverse direction of the merge flow: fold the *instance's base branch*
   // back down into the worktree so the agent picks up infra/base changes
   // landed since the fork. Source is the pinned base branch, not host's
   // current HEAD — if host has since switched branches, that's irrelevant
   // to this task. No overlay: precheck (read-only, via merge-tree) decides
   // whether to just do it or toast why we couldn't.
-  async function runSyncFromHost(inst: Instance): Promise<void> {
+  async function runPullFromHost(inst: Instance): Promise<void> {
     if (!inst.branch) {
       store.setError(t((m) => m.toast.noBranchYet));
       return;
@@ -676,27 +675,66 @@ export function App(props: AppProps) {
     }
     const baseBranch = inst.baseBranch();
     if (!baseBranch) {
-      store.setError(t((m) => m.toast.syncBlocked)(t((m) => m.blocker.noBaseBranch)));
+      store.setError(t((m) => m.toast.pullBlocked)(t((m) => m.blocker.noBaseBranch)));
       return;
     }
     try {
-      const pre = await precheckSyncFromHost(worktreePath, baseBranch);
+      const pre = await precheckPullFromHost(worktreePath, baseBranch);
       if (pre.blocker) {
-        store.setError(t((m) => m.toast.syncBlocked)(formatBlocker(pre.blocker)));
+        store.setError(t((m) => m.toast.pullBlocked)(formatBlocker(pre.blocker)));
         return;
       }
       if (pre.conflicts.length > 0) {
-        store.setError(t((m) => m.toast.syncConflicts)(baseBranch, pre.conflicts.length));
+        store.setError(t((m) => m.toast.pullConflicts)(baseBranch, pre.conflicts.length));
         return;
       }
-      await syncFromHost(worktreePath, baseBranch, makeCommitMessageProvider(props.config, 'sync'));
-      // Refresh commit stats so the ↑↓ chip reflects the new state
-      // before the next metadata tick runs.
-      await inst.computeCommitStats().catch(() => undefined);
+      inst.busy = true;
       store.bumpRev();
-      store.setInfo(t((m) => m.toast.syncedFromHost)(baseBranch));
+      try {
+        await pullFromHost(
+          worktreePath,
+          baseBranch,
+          makeCommitMessageProvider(props.config, 'pull'),
+        );
+        inst.busy = false;
+        await inst.updateDiffBase().catch(() => undefined);
+        await inst.computeCommitStats().catch(() => undefined);
+        await inst.computeDiff().catch(() => undefined);
+        store.bumpRev();
+        store.setInfo(t((m) => m.toast.pulledFromHost)(baseBranch));
+      } catch (err) {
+        inst.busy = false;
+        store.bumpRev();
+        throw err;
+      }
     } catch (err) {
-      store.setError(t((m) => m.toast.syncFailed)(errMsg(err)));
+      store.setError(t((m) => m.toast.pullFailed)(errMsg(err)));
+    }
+  }
+
+  async function autoPullInstance(
+    inst: Instance,
+    worktreePath: string,
+    baseBranch: string,
+  ): Promise<void> {
+    inst.busy = true;
+    store.bumpRev();
+    try {
+      const pre = await precheckPullFromHost(worktreePath, baseBranch);
+      if (pre.blocker || pre.conflicts.length > 0) {
+        inst.busy = false;
+        store.bumpRev();
+        return;
+      }
+      await pullFromHost(worktreePath, baseBranch, makeCommitMessageProvider(props.config, 'pull'));
+      inst.busy = false;
+      await inst.updateDiffBase().catch(() => undefined);
+      await inst.computeCommitStats().catch(() => undefined);
+      await inst.computeDiff().catch(() => undefined);
+      store.bumpRev();
+    } catch {
+      inst.busy = false;
+      store.bumpRev();
     }
   }
 
@@ -710,6 +748,11 @@ export function App(props: AppProps) {
       return;
     }
     try {
+      await inst.computeCommitStats().catch(() => undefined);
+      if (inst.commitStats.ahead === 0 && !(await inst.isDirty().catch(() => false))) {
+        store.setError(t((m) => m.toast.nothingToApply));
+        return;
+      }
       const hostBranch = await getHostBranch(props.repoPath);
       if (!hostBranch) {
         store.setError(t((m) => m.toast.applyBlocked)(formatBlocker({ kind: 'hostDetachedHead' })));
@@ -736,9 +779,8 @@ export function App(props: AppProps) {
   }
 
   async function runApply(inst: Instance, hostBranch: string): Promise<void> {
-    // Mirror `m`'s auto-commit so the agent's in-flight edits land in the
-    // squash result. Without this they'd be stranded in a worktree we're
-    // about to delete.
+    inst.busy = true;
+    store.bumpRev();
     const autoCommitted = await inst.commitDirty(
       `[claudesquad] auto-commit on apply of ${inst.title}`,
       makeCommitMessageProvider(props.config, 'autoCommit'),
@@ -750,19 +792,16 @@ export function App(props: AppProps) {
       message,
       makeCommitMessageProvider(props.config, 'squashApply'),
     );
-    // Retire the instance: kill tmux/worktree and drop from the list.
-    // Failure here doesn't unwind the squash (that's already committed) —
-    // surface as a separate error so the success isn't swallowed.
+    inst.busy = false;
     try {
       await inst.kill();
       store.removeInstance(inst.title);
     } catch (err) {
       store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
+      store.bumpRev();
       return;
     }
     store.setInfo(t((m) => m.toast.applied)(inst.branch, hostBranch, autoCommitted));
-    // Refresh every remaining instance — the host branch just moved
-    // forward by one commit, so their `↓N` counters need to catch up.
     await Promise.all(
       store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
     );

@@ -64,6 +64,10 @@ export class Instance {
   /** Commit divergence vs the host repo's current branch since the worktree
    *  was cut. Refreshed by the periodic metadata loop and after merges. */
   commitStats: CommitCounts = { ahead: 0, behind: 0 };
+  /** Transient flag: an async operation (merge/apply/sync hook) is in
+   *  progress. The list row shows a secondary indicator without replacing
+   *  the original status icon. */
+  busy = false;
   /** `git status` bucket counts for the list-row bracket. Refreshed on the
    *  same metadata tick as diffStats. Zero-initialised so freshly-created
    *  instances render a clean (collapsed) bracket until the first tick. */
@@ -440,6 +444,10 @@ export class Instance {
     const stats = await this.worktree.diffNumstat();
     this.diffStats = { ...this.diffStats, added: stats.added, removed: stats.removed };
     return stats;
+  }
+
+  async updateDiffBase(): Promise<void> {
+    if (this.worktree) await this.worktree.updateDiffBase();
   }
 
   async computeCommitStats(): Promise<CommitCounts> {

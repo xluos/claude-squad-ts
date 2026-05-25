@@ -29,15 +29,15 @@ test('general command applies to every point', () => {
   expect(makeCommitMessageProvider(cfg, 'merge')).toBeDefined();
   expect(makeCommitMessageProvider(cfg, 'squashApply')).toBeDefined();
   expect(makeCommitMessageProvider(cfg, 'autoCommit')).toBeDefined();
-  expect(makeCommitMessageProvider(cfg, 'sync')).toBeDefined();
+  expect(makeCommitMessageProvider(cfg, 'pull')).toBeDefined();
 });
 
 test('per-point override can disable a single point', () => {
   const cfg = cfgWith({
-    commit_message: { command: ['commitmsg'], overrides: { sync: { enabled: false } } },
+    commit_message: { command: ['commitmsg'], overrides: { pull: { enabled: false } } },
   });
   expect(makeCommitMessageProvider(cfg, 'merge')).toBeDefined();
-  expect(makeCommitMessageProvider(cfg, 'sync')).toBeUndefined();
+  expect(makeCommitMessageProvider(cfg, 'pull')).toBeUndefined();
 });
 
 test('override with no general command enables just that point', () => {
@@ -55,7 +55,7 @@ test('general enabled:false is overridable back on per-point', () => {
     },
   });
   expect(makeCommitMessageProvider(cfg, 'merge')).toBeDefined();
-  expect(makeCommitMessageProvider(cfg, 'sync')).toBeUndefined();
+  expect(makeCommitMessageProvider(cfg, 'pull')).toBeUndefined();
 });
 
 // ---- end-to-end against a real repo --------------------------------------

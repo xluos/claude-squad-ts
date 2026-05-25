@@ -1,11 +1,14 @@
 import type { RGBA } from '@opentui/core';
 import type { JSX } from 'solid-js';
-import { For, Show } from 'solid-js';
+import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Instance } from '../../session/instance.js';
 import { t } from '../../shared/i18n.js';
 import { colors, icons } from '../../shared/styles.js';
 import type { GitStatus } from '../../shared/types.js';
 import { Status } from '../../shared/types.js';
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_INTERVAL_MS = 80;
 
 export interface InstanceListProps {
   instances: Instance[];
@@ -143,6 +146,16 @@ function Row(props: RowProps) {
     void props.rev;
     return props.instance.status;
   };
+  const busy = () => {
+    void props.rev;
+    return props.instance.busy;
+  };
+  const [spinnerIdx, setSpinnerIdx] = createSignal(0);
+  const spinTimer = setInterval(
+    () => setSpinnerIdx((i) => (i + 1) % SPINNER_FRAMES.length),
+    SPINNER_INTERVAL_MS,
+  );
+  onCleanup(() => clearInterval(spinTimer));
   // Mirror the Go reference: selected rows use a light-blue-grey background
   // (#dde4f0) with dark text for contrast. Padding-X gives the band of
   // colour breathing room from the outer border instead of butting against
@@ -163,9 +176,16 @@ function Row(props: RowProps) {
         <text fg={titleFg()} attributes={props.selected ? 1 : 0} bg={bg()}>
           {displayName()}
         </text>
-        <text fg={iconColorFor(status())} bg={bg()}>
-          {iconFor(status())}
-        </text>
+        <box flexDirection="row" backgroundColor={bg()} gap={1}>
+          <Show when={busy()}>
+            <text fg={colors.warning} bg={bg()}>
+              {SPINNER_FRAMES[spinnerIdx()]}
+            </text>
+          </Show>
+          <text fg={iconColorFor(status())} bg={bg()}>
+            {iconFor(status())}
+          </text>
+        </box>
       </box>
       <text fg={branchFg()} bg={bg()}>
         {branch()}

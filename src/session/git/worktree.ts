@@ -52,6 +52,7 @@ export interface Worktree {
   isBranchCheckedOut(): Promise<boolean>;
   commit(msg: string, getMessage?: CommitMessageProvider): Promise<void>;
   pushAndOpen(msg: string, open: boolean): Promise<void>;
+  updateDiffBase(): Promise<void>;
 }
 
 export async function createWorktree(init: WorktreeInit): Promise<Worktree> {
@@ -190,11 +191,11 @@ function buildWorktree(data: WorktreeData): Worktree {
     },
 
     diff(): Promise<DiffStats> {
-      return computeDiff(data.worktree_path, data.base_commit_sha);
+      return computeDiff(data.worktree_path, data.diff_base_sha || data.base_commit_sha);
     },
 
     diffNumstat(): Promise<DiffStats> {
-      return computeDiffNumstat(data.worktree_path, data.base_commit_sha);
+      return computeDiffNumstat(data.worktree_path, data.diff_base_sha || data.base_commit_sha);
     },
 
     status(): Promise<GitStatus> {
@@ -271,6 +272,10 @@ function buildWorktree(data: WorktreeData): Worktree {
       if (open) {
         await runCmd('gh', ['browse', '--branch', branch], { cwd: data.worktree_path });
       }
+    },
+
+    async updateDiffBase(): Promise<void> {
+      data.diff_base_sha = await getHeadSha(data.worktree_path);
     },
   };
   return self;

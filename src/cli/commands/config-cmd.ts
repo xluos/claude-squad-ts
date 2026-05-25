@@ -22,7 +22,7 @@ interface ConfigField {
   examples?: unknown[];
 }
 
-const COMMIT_POINTS = ['merge', 'squashApply', 'autoCommit', 'sync'] as const;
+const COMMIT_POINTS = ['merge', 'squashApply', 'autoCommit', 'pull'] as const;
 
 const CONFIG_SCHEMA: ConfigField[] = [
   {
@@ -51,6 +51,12 @@ const CONFIG_SCHEMA: ConfigField[] = [
     type: 'string',
     description: 'UI language. "auto" detects from $LANG/$LC_ALL',
     enum: ['en', 'zh', 'auto'],
+  },
+  {
+    path: 'auto_pull',
+    type: 'boolean',
+    description:
+      'Automatically pull host branch into running worktrees when behind (conflict-free only)',
   },
   {
     path: 'profiles',

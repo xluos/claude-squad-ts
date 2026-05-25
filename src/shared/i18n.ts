@@ -132,7 +132,7 @@ const EN = {
       merge: 'Merge worktree branch into the host branch (agent keeps running)',
       mergeRetire: 'Merge & retire — merge, then kill tmux / worktree / branch',
       apply: 'Apply — squash the instance branch as one commit, then retire',
-      sync: 'Sync from base branch — pull host changes down into the worktree',
+      pull: 'Pull from base branch — merge host changes down into the worktree',
       send: 'Send a prompt to the live session without attaching',
       switchTab: 'Switch between Preview and Diff tabs',
       scroll: 'Scroll preview / diff (Esc to exit scroll)',
@@ -169,6 +169,9 @@ const EN = {
     instanceLimit: (max: number) => `instance limit reached (${max})`,
     pausedNeedResume: 'Instance is paused — press r to resume before opening.',
     noBranchYet: 'instance has no branch yet — cannot merge',
+    instanceBusy: 'An operation is already in progress on this instance.',
+    nothingToMerge: 'Branch is up to date with host — nothing to merge.',
+    nothingToApply: 'Branch is up to date with host — nothing to apply.',
     cleanupFailed: (err: string) => `merge succeeded but cleanup failed: ${err}`,
     merged: (src: string, host: string, autoCommitted: boolean, retired: boolean) => {
       const auto = autoCommitted ? ' (with auto-commit of pending changes)' : '';
@@ -184,11 +187,11 @@ const EN = {
     sendNotRunning: 'session is not running — resume it first',
     sendEmpty: 'nothing to send',
     sendFailed: (err: string) => `failed to send: ${err}`,
-    syncedFromHost: (host: string) => `Synced ${host} → worktree.`,
-    syncBlocked: (reason: string) => `cannot sync: ${reason}`,
-    syncConflicts: (host: string, n: number) =>
-      `cannot sync ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
-    syncFailed: (err: string) => `sync failed: ${err}`,
+    pulledFromHost: (host: string) => `Pulled ${host} → worktree.`,
+    pullBlocked: (reason: string) => `cannot pull: ${reason}`,
+    pullConflicts: (host: string, n: number) =>
+      `cannot pull ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
+    pullFailed: (err: string) => `pull failed: ${err}`,
     applied: (src: string, host: string, autoCommitted: boolean) => {
       const auto = autoCommitted ? ' (with auto-commit of pending changes)' : '';
       return `Applied ${src} → ${host} as one commit${auto}. Instance retired.`;
@@ -206,13 +209,13 @@ const EN = {
     hostDirty: 'host repo has uncommitted changes — commit or stash first',
     sourceBranchMissing: (branch: string) =>
       `branch "${branch}" not found in host repo (was the worktree pushed?)`,
-    worktreeDetachedHead: 'worktree is in detached HEAD — cannot sync',
+    worktreeDetachedHead: 'worktree is in detached HEAD — cannot pull',
     worktreeDirty: 'worktree has uncommitted changes — let the agent settle first',
     worktreeOnHostBranch: (branch: string) =>
-      `worktree is already on "${branch}" — nothing to sync`,
+      `worktree is already on "${branch}" — nothing to pull`,
     hostBranchMissing: (branch: string) => `branch "${branch}" not found from worktree`,
     mergePrecheckFailed: (detail: string) => detail || 'merge precheck failed',
-    syncPrecheckFailed: (detail: string) => detail || 'sync precheck failed',
+    pullPrecheckFailed: (detail: string) => detail || 'pull precheck failed',
     noBaseBranch: 'no base branch recorded for this instance',
   },
   menu: {
@@ -223,7 +226,7 @@ const EN = {
     checkout: 'checkout',
     merge: 'merge',
     apply: 'apply',
-    sync: 'sync',
+    pull: 'pull',
     switchTab: 'switch tab',
     quit: 'quit',
     help: 'help',
@@ -369,7 +372,7 @@ const ZH: Messages = {
       merge: '把工作树分支合入主分支（会话继续保留）',
       mergeRetire: '合并并关闭 —— 合并后清理 tmux / 工作树 / 分支',
       apply: '应用 —— 把分支 squash 成单个 commit，再关闭实例',
-      sync: '从基准分支同步下来 —— 把 host 的新提交拉进工作树',
+      pull: '从基准分支拉取 —— 把 host 的新提交合入工作树',
       send: '不接入会话、直接向运行中的会话发送一段提示词',
       switchTab: '在 Preview 和 Diff 之间切换',
       scroll: '滚动 preview / diff（Esc 退出滚动）',
@@ -406,6 +409,9 @@ const ZH: Messages = {
     instanceLimit: (max: number) => `已达实例上限 (${max})`,
     pausedNeedResume: '实例已暂停 —— 请先按 r 恢复再打开',
     noBranchYet: '实例尚未创建分支 —— 无法合并',
+    instanceBusy: '该实例正在执行操作，请稍候',
+    nothingToMerge: '分支已与主分支同步 —— 没有需要合并的内容',
+    nothingToApply: '分支已与主分支同步 —— 没有需要应用的内容',
     cleanupFailed: (err: string) => `合并成功但清理失败: ${err}`,
     merged: (src: string, host: string, autoCommitted: boolean, retired: boolean) => {
       const auto = autoCommitted ? '（含未提交改动自动 commit）' : '';
@@ -419,10 +425,10 @@ const ZH: Messages = {
     sendNotRunning: '会话未运行 —— 请先 r 恢复',
     sendEmpty: '没有要发送的内容',
     sendFailed: (err: string) => `发送失败: ${err}`,
-    syncedFromHost: (host: string) => `已同步 ${host} → 工作树。`,
-    syncBlocked: (reason: string) => `无法同步: ${reason}`,
-    syncConflicts: (host: string, n: number) => `无法同步 ${host}: ${n} 个文件会冲突`,
-    syncFailed: (err: string) => `同步失败: ${err}`,
+    pulledFromHost: (host: string) => `已拉取 ${host} → 工作树。`,
+    pullBlocked: (reason: string) => `无法拉取: ${reason}`,
+    pullConflicts: (host: string, n: number) => `无法拉取 ${host}: ${n} 个文件会冲突`,
+    pullFailed: (err: string) => `拉取失败: ${err}`,
     applied: (src: string, host: string, autoCommitted: boolean) => {
       const auto = autoCommitted ? '（含未提交改动自动 commit）' : '';
       return `已应用 ${src} → ${host}（一个 commit）${auto}。实例已关闭。`;
@@ -439,12 +445,12 @@ const ZH: Messages = {
     hostDirty: '主仓库有未提交改动 —— 请先 commit 或 stash',
     sourceBranchMissing: (branch: string) =>
       `主仓库找不到分支 "${branch}"（worktree 是否已 push?）`,
-    worktreeDetachedHead: '工作树处于游离 HEAD —— 无法同步',
+    worktreeDetachedHead: '工作树处于游离 HEAD —— 无法拉取',
     worktreeDirty: '工作树有未提交改动 —— 请等 agent 收尾',
-    worktreeOnHostBranch: (branch: string) => `工作树已经在 "${branch}" 上 —— 没什么可同步`,
+    worktreeOnHostBranch: (branch: string) => `工作树已经在 "${branch}" 上 —— 没什么可拉取`,
     hostBranchMissing: (branch: string) => `工作树看不到分支 "${branch}"`,
     mergePrecheckFailed: (detail: string) => detail || '合并预检失败',
-    syncPrecheckFailed: (detail: string) => detail || '同步预检失败',
+    pullPrecheckFailed: (detail: string) => detail || '拉取预检失败',
     noBaseBranch: '该实例没有记录基准分支',
   },
   menu: {
@@ -455,7 +461,7 @@ const ZH: Messages = {
     checkout: '切出',
     merge: '合并',
     apply: '应用',
-    sync: '同步',
+    pull: '拉取',
     switchTab: '切 tab',
     quit: '退出',
     help: '帮助',
@@ -549,7 +555,7 @@ export function formatBlocker(b: MergeBlocker): string {
       return t((m) => m.blocker.hostBranchMissing)(b.branch);
     case 'mergePrecheckFailed':
       return t((m) => m.blocker.mergePrecheckFailed)(b.detail);
-    case 'syncPrecheckFailed':
-      return t((m) => m.blocker.syncPrecheckFailed)(b.detail);
+    case 'pullPrecheckFailed':
+      return t((m) => m.blocker.pullPrecheckFailed)(b.detail);
   }
 }

@@ -61,6 +61,10 @@ export interface WorktreeData {
    * the chip when missing.
    */
   base_branch_name?: string;
+  /** Commit to diff against. Updated after merge/apply so the diff tab
+   *  shows only changes since the last operation, not since branch creation.
+   *  Falls back to `base_commit_sha` when absent (legacy data). */
+  diff_base_sha?: string;
 }
 
 export interface InstanceData {
@@ -154,9 +158,9 @@ export interface LLMConfig {
  *  - `merge`       → the `m`/`M` merge commit on the host branch
  *  - `squashApply` → the single squash commit of the `a` (apply) flow
  *  - `autoCommit`  → folding the worktree's dirty edits before merge/apply
- *  - `sync`        → the reverse merge commit when syncing host → worktree
+ *  - `pull`        → the merge commit when pulling host changes into worktree
  */
-export type CommitPoint = 'merge' | 'squashApply' | 'autoCommit' | 'sync';
+export type CommitPoint = 'merge' | 'squashApply' | 'autoCommit' | 'pull';
 
 /**
  * One commit-message hook. The program is spawned as an argv array (no
@@ -201,7 +205,11 @@ export interface AppConfig {
   profiles?: Profile[];
   llm?: LLMConfig;
   /** External hooks. Currently only `commit_message`: delegate commit
-   *  message generation at merge/apply/sync/auto-commit points to a local
+   *  message generation at merge/apply/pull/auto-commit points to a local
    *  program. Absent (the default) → built-in `[claudesquad] …` messages. */
   hooks?: HooksConfig;
+  /** When true, automatically pull the host branch into each running
+   *  worktree whenever it falls behind — equivalent to pressing `u` — as
+   *  long as the precheck reports no conflicts or blockers. */
+  auto_pull?: boolean;
 }

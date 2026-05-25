@@ -41,7 +41,7 @@ const SECTIONS: SectionDef[] = [
       ['m', () => t((m) => m.help.entries.merge)],
       ['M', () => t((m) => m.help.entries.mergeRetire)],
       ['a', () => t((m) => m.help.entries.apply)],
-      ['u', () => t((m) => m.help.entries.sync)],
+      ['u', () => t((m) => m.help.entries.pull)],
     ],
   },
   {
