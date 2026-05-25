@@ -32,6 +32,7 @@ export const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 export const ERROR_DISMISS_MS = 3000;
 export const MENU_KEY_HIGHLIGHT_MS = 500;
 export const DEFAULT_DAEMON_POLL_MS = 1000;
+export const AUTO_PULL_COOLDOWN_MS = 60_000;
 export const TMUX_RESIZE_DEBOUNCE_MS = 50;
 
 // Tmux session naming

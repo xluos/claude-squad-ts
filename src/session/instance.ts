@@ -68,6 +68,9 @@ export class Instance {
    *  progress. The list row shows a secondary indicator without replacing
    *  the original status icon. */
   busy = false;
+  /** Timestamp of last auto-pull failure. Used to suppress retries for a
+   *  cooldown period so a persistent error doesn't cause spinner flicker. */
+  autoPullFailedAt = 0;
   /** `git status` bucket counts for the list-row bracket. Refreshed on the
    *  same metadata tick as diffStats. Zero-initialised so freshly-created
    *  instances render a clean (collapsed) bracket until the first tick. */

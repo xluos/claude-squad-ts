@@ -33,6 +33,7 @@ import {
 import { writeClipboard } from '../shared/clipboard.js';
 import { effectiveProgram, getProfiles } from '../shared/config.js';
 import {
+  AUTO_PULL_COOLDOWN_MS,
   BRANCH_SEARCH_DEBOUNCE_MS,
   HELP_BIT_INSTANCE_ATTACH,
   HELP_BIT_INSTANCE_CHECKOUT,
@@ -300,9 +301,11 @@ export function App(props: AppProps) {
         // Auto-pull: when enabled, trigger `u`-equivalent for running
         // instances that have fallen behind and can be pulled cleanly.
         if (props.config.auto_pull) {
+          const now = Date.now();
           for (const inst of insts) {
             if (inst.isPaused() || inst.busy) continue;
             if (inst.commitStats.behind <= 0) continue;
+            if (now - inst.autoPullFailedAt < AUTO_PULL_COOLDOWN_MS) continue;
             const wt = inst.worktreePath();
             const base = inst.baseBranch();
             if (!wt || !base) continue;
@@ -717,22 +720,23 @@ export function App(props: AppProps) {
     worktreePath: string,
     baseBranch: string,
   ): Promise<void> {
-    inst.busy = true;
-    store.bumpRev();
     try {
       const pre = await precheckPullFromHost(worktreePath, baseBranch);
       if (pre.blocker || pre.conflicts.length > 0) {
-        inst.busy = false;
-        store.bumpRev();
+        inst.autoPullFailedAt = Date.now();
         return;
       }
+      inst.busy = true;
+      store.bumpRev();
       await pullFromHost(worktreePath, baseBranch, makeCommitMessageProvider(props.config, 'pull'));
       inst.busy = false;
+      inst.autoPullFailedAt = 0;
       await inst.updateDiffBase().catch(() => undefined);
       await inst.computeCommitStats().catch(() => undefined);
       await inst.computeDiff().catch(() => undefined);
       store.bumpRev();
     } catch {
+      inst.autoPullFailedAt = Date.now();
       inst.busy = false;
       store.bumpRev();
     }
