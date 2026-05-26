@@ -89,6 +89,14 @@ function countOrdinary(line: string, out: GitStatus): void {
     return;
   }
 
+  // Stale intent-to-add: `git add -N .` marked a file, then the file was
+  // deleted from disk before the next status check. The index still has the
+  // phantom entry (A = added in index, D = deleted from worktree). This is
+  // noise — the file never belonged to HEAD — so skip it entirely.
+  if (x === 'A' && y === 'D') {
+    return;
+  }
+
   // Index (staged) side
   if (x !== '.') {
     if (x === 'R' || x === 'C') out.renamed++;
