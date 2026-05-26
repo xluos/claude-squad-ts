@@ -33,6 +33,7 @@ const EN = {
     hintPrompt: 'start one with a prompt',
     hintHelp: 'full help',
     willBeCreated: '(will be created)',
+    translatingName: 'Generating name…',
   },
   tabs: {
     preview: 'Preview',
@@ -275,6 +276,7 @@ const ZH: Messages = {
     hintPrompt: '带提示词创建',
     hintHelp: '完整帮助',
     willBeCreated: '(将会创建)',
+    translatingName: '正在生成名称…',
   },
   tabs: {
     preview: '预览',

@@ -1,6 +1,10 @@
 import { defaultTextareaKeyBindings, type TextareaRenderable } from '@opentui/core';
+import { createSignal, onCleanup, Show } from 'solid-js';
 import { t } from '../../shared/i18n.js';
 import { colors } from '../../shared/styles.js';
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_INTERVAL_MS = 80;
 
 /** Same Enter-submits keymap as the bottom prompt input. */
 const SUBMIT_ON_ENTER_BINDINGS = [
@@ -24,6 +28,8 @@ export interface NewInstanceRowProps {
   onContentChange: () => void;
   onSubmit: () => void;
   onKeyDown: (e: { name: string; preventDefault(): void }) => void;
+  /** When true, show a spinner + hint while waiting for LLM name translation. */
+  loading?: boolean;
 }
 
 /**
@@ -34,6 +40,13 @@ export interface NewInstanceRowProps {
  * at the other side of the screen.
  */
 export function NewInstanceRow(props: NewInstanceRowProps) {
+  const [spinnerIdx, setSpinnerIdx] = createSignal(0);
+  const timer = setInterval(
+    () => setSpinnerIdx((i) => (i + 1) % SPINNER_FRAMES.length),
+    SPINNER_INTERVAL_MS,
+  );
+  onCleanup(() => clearInterval(timer));
+
   return (
     <box flexDirection="column" marginTop={1}>
       <box flexDirection="row">
@@ -45,15 +58,21 @@ export function NewInstanceRow(props: NewInstanceRowProps) {
           placeholderColor={colors.muted}
           focusedTextColor={colors.accent}
           textColor={colors.accent}
-          focused={true}
+          focused={!props.loading}
           keyBindings={SUBMIT_ON_ENTER_BINDINGS}
           onContentChange={props.onContentChange}
           onSubmit={props.onSubmit}
           onKeyDown={props.onKeyDown}
         />
-        <text fg={colors.statusLoading}> ◐</text>
+        <Show when={props.loading}>
+          <text fg={colors.statusLoading}> {SPINNER_FRAMES[spinnerIdx()]}</text>
+        </Show>
       </box>
-      <text fg={colors.muted}>{`   λ-${t((m) => m.list.willBeCreated)}`}</text>
+      <text fg={colors.muted}>
+        {props.loading
+          ? `   ${t((m) => m.list.translatingName)}`
+          : `   λ-${t((m) => m.list.willBeCreated)}`}
+      </text>
     </box>
   );
 }
