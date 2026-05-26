@@ -45,10 +45,10 @@ import {
 } from '../shared/constants.js';
 import { formatBlocker, t } from '../shared/i18n.js';
 import { log } from '../shared/logger.js';
-import { loadGlobalState, markHelpSeen } from '../shared/state.js';
+import { loadGlobalState, loadProjectState, markHelpSeen } from '../shared/state.js';
 import { colors } from '../shared/styles.js';
 import type { AppConfig } from '../shared/types.js';
-import { APP_STATE } from '../shared/types.js';
+import { APP_STATE, Status } from '../shared/types.js';
 import { Diff } from '../ui/components/Diff.js';
 import { ErrorBox } from '../ui/components/ErrorBox.js';
 import { InstanceList } from '../ui/components/List.js';
@@ -134,6 +134,7 @@ export function App(props: AppProps) {
   // reflects the result of the user's action immediately rather than after
   // the next tick.
   const [tmuxInfos, setTmuxInfos] = createSignal<TmuxSessionInfo[]>([]);
+  const [crossProjectNames, setCrossProjectNames] = createSignal<Map<string, string>>(new Map());
 
   // Idempotent — safe to call from the metadata tick, from the overlay's
   // own refresh handler, and right after a kill. Silently swallows tmux
@@ -144,6 +145,29 @@ export function App(props: AppProps) {
       setTmuxInfos(infos);
     } catch {
       // tmux missing / errored — leave the previous reading alone.
+    }
+  }
+
+  async function refreshCrossProjectNames(): Promise<void> {
+    try {
+      const global = await loadGlobalState();
+      const map = new Map<string, string>();
+      for (const project of global.projects) {
+        if (project.id === props.projectID) continue;
+        try {
+          const state = await loadProjectState(project.id, project.repo_path);
+          for (const inst of state.instances) {
+            if (inst.status === Status.Paused) continue;
+            const name = tmuxNameOf(inst.title);
+            if (!map.has(name)) map.set(name, project.name);
+          }
+        } catch {
+          // Skip unreadable projects.
+        }
+      }
+      setCrossProjectNames(map);
+    } catch {
+      // Leave previous reading alone.
     }
   }
 
@@ -159,14 +183,17 @@ export function App(props: AppProps) {
         trackedByName.set(tmuxNameOf(inst.title), inst.displayName ?? inst.title);
       }
     }
+    const foreignNames = crossProjectNames();
     return tmuxInfos().map((info) => ({
       ...info,
       trackedTitle: trackedByName.get(info.name) ?? null,
+      foreignProject: trackedByName.has(info.name) ? null : (foreignNames.get(info.name) ?? null),
     }));
   });
   const tmuxLiveCount = createMemo(() => tmuxPanelEntries().length);
   const tmuxOrphanCount = createMemo(
-    () => tmuxPanelEntries().filter((e) => e.trackedTitle === null).length,
+    () =>
+      tmuxPanelEntries().filter((e) => e.trackedTitle === null && e.foreignProject === null).length,
   );
   onMount(async () => {
     try {
@@ -297,6 +324,9 @@ export function App(props: AppProps) {
         }
         if (dirty) store.bumpRev();
         await refreshTmuxInfos();
+        if (tickCount % METADATA_TICK_DIVISOR_PAUSED === 0) {
+          await refreshCrossProjectNames();
+        }
 
         // Auto-pull: when enabled, trigger `u`-equivalent for running
         // instances that have fallen behind and can be pulled cleanly.
@@ -424,6 +454,7 @@ export function App(props: AppProps) {
       // user sees the last tick's view (could be up to METADATA_TICK_MS
       // stale) until the next refresh fires.
       void refreshTmuxInfos();
+      void refreshCrossProjectNames();
       return;
     }
     if (name === 'escape' && store.model.scrollMode) {
@@ -1448,7 +1479,9 @@ export function App(props: AppProps) {
               await refreshTmuxInfos();
             }}
             onKillOrphans={async () => {
-              const orphans = tmuxPanelEntries().filter((e) => e.trackedTitle === null);
+              const orphans = tmuxPanelEntries().filter(
+                (e) => e.trackedTitle === null && e.foreignProject === null,
+              );
               let killed = 0;
               for (const o of orphans) {
                 // Sequential, not parallel: tmux's command socket

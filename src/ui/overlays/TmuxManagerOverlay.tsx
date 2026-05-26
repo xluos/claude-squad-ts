@@ -8,6 +8,8 @@ import { colors } from '../../shared/styles.js';
 export interface TmuxPanelEntry extends TmuxSessionInfo {
   /** Title of the tracked Instance owning this session, or null if orphan. */
   trackedTitle: string | null;
+  /** Project name when the session belongs to a different project, or null. */
+  foreignProject: string | null;
 }
 
 export interface TmuxManagerOverlayProps {
@@ -50,7 +52,9 @@ export function TmuxManagerOverlay(props: TmuxManagerOverlayProps) {
     return s;
   });
 
-  const orphanCount = createMemo(() => props.entries.filter((e) => e.trackedTitle === null).length);
+  const orphanCount = createMemo(
+    () => props.entries.filter((e) => e.trackedTitle === null && e.foreignProject === null).length,
+  );
 
   useKeyboard((e) => {
     const c = confirm();
@@ -160,19 +164,24 @@ export function TmuxManagerOverlay(props: TmuxManagerOverlayProps) {
         <For each={props.entries}>
           {(entry, i) => {
             const isSelected = () => i() === safeSelected();
-            const orphan = () => entry.trackedTitle === null;
+            const orphan = () => entry.trackedTitle === null && entry.foreignProject === null;
+            const foreign = () => entry.trackedTitle === null && entry.foreignProject !== null;
             const badgeText = () =>
               orphan()
                 ? t((m) => m.tmuxPanel.badgeOrphan)
-                : entry.attached
-                  ? t((m) => m.tmuxPanel.badgeAttached)
-                  : t((m) => m.tmuxPanel.badgeTracked);
+                : foreign()
+                  ? t((m) => m.tmuxPanel.badgeForeign)
+                  : entry.attached
+                    ? t((m) => m.tmuxPanel.badgeAttached)
+                    : t((m) => m.tmuxPanel.badgeTracked);
             const badgeColor = () =>
               orphan()
                 ? colors.warning
-                : entry.attached
-                  ? colors.statusRunning
-                  : colors.statusReady;
+                : foreign()
+                  ? colors.muted
+                  : entry.attached
+                    ? colors.statusRunning
+                    : colors.statusReady;
             const rowFg = () => (isSelected() ? colors.selectedFg : 'white');
             const rowBg = () => (isSelected() ? colors.selectedBg : undefined);
             const sizeText = () =>
@@ -181,6 +190,9 @@ export function TmuxManagerOverlay(props: TmuxManagerOverlayProps) {
               const base = shortName(entry.name);
               if (entry.trackedTitle && entry.trackedTitle !== base) {
                 return `${base} (${entry.trackedTitle})`;
+              }
+              if (entry.foreignProject) {
+                return `${base} (${entry.foreignProject})`;
               }
               return base;
             };
