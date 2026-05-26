@@ -23,6 +23,7 @@ import {
 } from '../session/git/merge.js';
 import { fetchPrune, getHostBranch, searchBranches } from '../session/git/util.js';
 import { Instance } from '../session/instance.js';
+import { hasNonAscii } from '../session/llm/translator.js';
 import { createStorage } from '../session/storage.js';
 import {
   killTmuxSession,
@@ -116,7 +117,7 @@ export function App(props: AppProps) {
   let textareaRef: TextareaRenderable | undefined;
   let nameTextareaRef: TextareaRenderable | undefined;
   const [inputValue, setInputValue] = createSignal('');
-  const [creatingInstance, setCreatingInstance] = createSignal(false);
+  const [creatingHint, setCreatingHint] = createSignal('');
 
   // ===== Persistence: restore + save =====
   //
@@ -885,7 +886,7 @@ export function App(props: AppProps) {
   // multiple are configured.
   function onTextareaKey(e: { name: string; preventDefault(): void }): void {
     if (e.name === 'escape') {
-      if (creatingInstance()) return;
+      if (creatingHint()) return;
       e.preventDefault();
       cancelInput();
       return;
@@ -966,12 +967,15 @@ export function App(props: AppProps) {
       store.setError(t((m) => m.toast.nameRequired));
       return;
     }
-    if (creatingInstance()) return;
+    if (creatingHint()) return;
     if (store.model.instances.some((i) => i.displayName === input)) {
       store.setError(t((m) => m.toast.nameExists)(input));
       return;
     }
-    setCreatingInstance(true);
+    const needsTranslate = hasNonAscii(input) && props.config.llm?.enabled;
+    setCreatingHint(
+      needsTranslate ? t((m) => m.list.translatingName) : t((m) => m.list.creatingInstance),
+    );
     try {
       const inst = await Instance.create({
         title: input,
@@ -982,6 +986,7 @@ export function App(props: AppProps) {
         autoYes: props.autoYes ?? props.config.auto_yes,
         llm: props.config.llm,
       });
+      if (needsTranslate) setCreatingHint(t((m) => m.list.creatingInstance));
       await inst.start(true);
       store.addInstance(inst);
       setInputValue('');
@@ -992,7 +997,7 @@ export function App(props: AppProps) {
     } catch (err) {
       store.setError(errMsg(err));
     } finally {
-      setCreatingInstance(false);
+      setCreatingHint('');
     }
   }
 
@@ -1223,7 +1228,7 @@ export function App(props: AppProps) {
               <NewInstanceRow
                 index={store.model.instances.length + 1}
                 placeholder={t((m) => m.placeholder.newName)}
-                loading={creatingInstance()}
+                loadingHint={creatingHint()}
                 textareaRef={(r) => {
                   nameTextareaRef = r;
                 }}

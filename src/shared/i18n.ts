@@ -34,6 +34,7 @@ const EN = {
     hintHelp: 'full help',
     willBeCreated: '(will be created)',
     translatingName: 'Generating name…',
+    creatingInstance: 'Creating session…',
   },
   tabs: {
     preview: 'Preview',
@@ -277,6 +278,7 @@ const ZH: Messages = {
     hintHelp: '完整帮助',
     willBeCreated: '(将会创建)',
     translatingName: '正在生成名称…',
+    creatingInstance: '正在创建会话…',
   },
   tabs: {
     preview: '预览',

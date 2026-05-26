@@ -28,8 +28,8 @@ export interface NewInstanceRowProps {
   onContentChange: () => void;
   onSubmit: () => void;
   onKeyDown: (e: { name: string; preventDefault(): void }) => void;
-  /** When true, show a spinner + hint while waiting for LLM name translation. */
-  loading?: boolean;
+  /** Non-empty string = show spinner + this text as the phase hint. */
+  loadingHint?: string;
 }
 
 /**
@@ -58,20 +58,18 @@ export function NewInstanceRow(props: NewInstanceRowProps) {
           placeholderColor={colors.muted}
           focusedTextColor={colors.accent}
           textColor={colors.accent}
-          focused={!props.loading}
+          focused={!props.loadingHint}
           keyBindings={SUBMIT_ON_ENTER_BINDINGS}
           onContentChange={props.onContentChange}
           onSubmit={props.onSubmit}
           onKeyDown={props.onKeyDown}
         />
-        <Show when={props.loading}>
+        <Show when={props.loadingHint}>
           <text fg={colors.statusLoading}> {SPINNER_FRAMES[spinnerIdx()]}</text>
         </Show>
       </box>
       <text fg={colors.muted}>
-        {props.loading
-          ? `   ${t((m) => m.list.translatingName)}`
-          : `   λ-${t((m) => m.list.willBeCreated)}`}
+        {props.loadingHint ? `   ${props.loadingHint}` : `   λ-${t((m) => m.list.willBeCreated)}`}
       </text>
     </box>
   );
