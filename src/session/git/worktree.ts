@@ -1,11 +1,11 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { projectWorktreesRoot } from '../../shared/paths.js';
 import type { DiffStats, GitStatus, WorktreeData } from '../../shared/types.js';
 import type { CommitMessageProvider } from './commit-hook.js';
 import { computeDiff, computeDiffNumstat } from './diff.js';
-import { ensureOk, runCmd, runGit } from './exec.js';
+import { ensureOk, type GitResult, runCmd, runGit } from './exec.js';
 import { computeGitStatus } from './status.js';
 import {
   ensureGhAuthed,
@@ -98,6 +98,34 @@ export function worktreeFromData(data: WorktreeData): Worktree {
 function makeWorktreePath(projectID: string, sessionName: string): string {
   const safe = sanitizeBranchName(sessionName) || 'session';
   return join(projectWorktreesRoot(projectID), `${safe}_${Date.now()}`);
+}
+
+function resolveIndexLock(worktreePath: string): string {
+  const dotGit = join(worktreePath, '.git');
+  if (existsSync(dotGit) && !existsSync(join(dotGit, 'HEAD'))) {
+    // worktree's .git is a file pointing to the real gitdir
+    try {
+      const content = readFileSync(dotGit, 'utf8').trim();
+      const m = content.match(/^gitdir:\s*(.+)$/);
+      if (m?.[1]) return join(m[1], 'index.lock');
+    } catch {}
+  }
+  return join(dotGit, 'index.lock');
+}
+
+function removeStaleIndexLock(worktreePath: string): boolean {
+  const lockPath = resolveIndexLock(worktreePath);
+  if (!existsSync(lockPath)) return false;
+  try {
+    unlinkSync(lockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isIndexLockError(r: GitResult): boolean {
+  return r.code !== 0 && r.stderr.includes('index.lock');
 }
 
 function buildWorktree(data: WorktreeData): Worktree {
@@ -239,7 +267,11 @@ function buildWorktree(data: WorktreeData): Worktree {
     },
 
     async commit(msg: string, getMessage?: CommitMessageProvider): Promise<void> {
-      ensureOk('git', ['add', '.'], await runGit(['-C', data.worktree_path, 'add', '.']));
+      let addResult = await runGit(['-C', data.worktree_path, 'add', '.']);
+      if (isIndexLockError(addResult) && removeStaleIndexLock(data.worktree_path)) {
+        addResult = await runGit(['-C', data.worktree_path, 'add', '.']);
+      }
+      ensureOk('git', ['add', '.'], addResult);
       const status = await runGit(['-C', data.worktree_path, 'status', '--porcelain']);
       if (status.stdout.trim().length === 0) return; // nothing to commit
       // Everything is staged now, so the hook can read the staged diff. A
