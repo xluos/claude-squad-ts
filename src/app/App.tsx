@@ -63,6 +63,8 @@ import { agentLabel, MergeOverlay } from '../ui/overlays/MergeOverlay.js';
 import { OnboardingOverlay } from '../ui/overlays/OnboardingOverlay.js';
 import { SendPromptOverlay } from '../ui/overlays/SendPromptOverlay.js';
 import { TmuxManagerOverlay, type TmuxPanelEntry } from '../ui/overlays/TmuxManagerOverlay.js';
+import { SerialQueue } from './serial-queue.js';
+import type { MergePreview } from './state.js';
 import { createAppStore } from './state.js';
 
 /**
@@ -104,6 +106,7 @@ export function App(props: AppProps) {
   const storage = createStorage(props.projectID, props.repoPath);
   const profiles = createMemo(() => getProfiles(props.config));
   const defaultProgram = createMemo(() => props.programOverride ?? effectiveProgram(props.config));
+  const mergeQueue = new SerialQueue();
 
   // Textarea state
   // Two textarea instances live in the tree:
@@ -608,10 +611,32 @@ export function App(props: AppProps) {
         store.setError(t((m) => m.toast.nothingToMerge));
         return;
       }
-      const [result, dirty] = await Promise.all([
-        precheckMerge(props.repoPath, inst.branch),
-        inst.isDirty().catch(() => false),
-      ]);
+      const worktreeDirty = await inst.isDirty().catch(() => false);
+      if (mergeQueue.size() > 0) {
+        const hostBranch = await getHostBranch(props.repoPath);
+        if (!hostBranch) {
+          store.setError(
+            t((m) => m.toast.mergeBlocked)(
+              inst.branch,
+              formatBlocker({ kind: 'hostDetachedHead' }),
+            ),
+          );
+          return;
+        }
+        store.openMergeOverlay({
+          index,
+          sourceBranch: inst.branch,
+          hostBranch,
+          hostPath: props.repoPath,
+          conflicts: [],
+          program: inst.program,
+          dirty: worktreeDirty,
+          killAfter,
+          queued: true,
+        });
+        return;
+      }
+      const result = await precheckMerge(props.repoPath, inst.branch);
       store.openMergeOverlay({
         index,
         sourceBranch: inst.branch,
@@ -620,8 +645,9 @@ export function App(props: AppProps) {
         conflicts: result.conflicts,
         blocker: result.blocker,
         program: inst.program,
-        dirty,
+        dirty: worktreeDirty,
         killAfter,
+        queued: false,
       });
     } catch (err) {
       store.setError(errMsg(err));
@@ -633,39 +659,73 @@ export function App(props: AppProps) {
     if (!preview) return;
     const inst = store.model.instances[preview.index];
     store.closeOverlay();
-    if (inst) {
-      inst.busy = true;
-      store.bumpRev();
+    if (!inst) return;
+    if (inst.busy) {
+      store.setError(t((m) => m.toast.instanceBusy));
+      return;
     }
+    inst.busy = true;
+    store.bumpRev();
+    const queued = mergeQueue.enqueue(() => runQueuedMerge(preview, inst));
+    if (queued.position > 0) {
+      store.setInfo(t((m) => m.toast.mergeQueued)(preview.sourceBranch, queued.position));
+    }
+    void queued.done.catch(() => undefined);
+  }
+
+  async function runQueuedMerge(preview: MergePreview, inst: Instance): Promise<void> {
     try {
-      let autoCommitted = false;
-      if (inst) {
-        autoCommitted = await inst.commitDirty(
-          `[claudesquad] auto-commit on merge of ${inst.title}`,
-          makeCommitMessageProvider(props.config, 'autoCommit'),
-        );
+      if (!store.model.instances.some((i) => i.title === inst.title)) return;
+      await inst.computeCommitStats().catch(() => undefined);
+      const dirty = await inst.isDirty().catch(() => false);
+      if (inst.commitStats.ahead === 0 && !dirty) {
+        store.setError(t((m) => m.toast.nothingToMerge));
+        return;
       }
+
+      const pre = await precheckMerge(preview.hostPath, preview.sourceBranch);
+      if (pre.blocker) {
+        store.setError(
+          t((m) => m.toast.mergeBlocked)(preview.sourceBranch, formatBlocker(pre.blocker)),
+        );
+        return;
+      }
+      if (pre.conflicts.length > 0) {
+        store.setError(
+          t((m) => m.toast.mergeConflicts)(
+            preview.sourceBranch,
+            pre.hostBranch,
+            pre.conflicts.length,
+          ),
+        );
+        return;
+      }
+
+      const autoCommitted = await inst.commitDirty(
+        `[claudesquad] auto-commit on merge of ${inst.title}`,
+        makeCommitMessageProvider(props.config, 'autoCommit'),
+      );
       await mergeIntoHost(
         preview.hostPath,
         preview.sourceBranch,
         makeCommitMessageProvider(props.config, 'merge'),
       );
 
-      if (!preview.killAfter && inst) {
+      if (!preview.killAfter) {
         const wt = inst.worktreePath();
         if (wt) {
           try {
-            await fastForwardWorktreeToHost(wt, preview.hostBranch);
+            await fastForwardWorktreeToHost(wt, pre.hostBranch);
           } catch (err) {
-            log.warn(`worktree FF to ${preview.hostBranch} failed: ${errMsg(err)}`);
+            log.warn(`worktree FF to ${pre.hostBranch} failed: ${errMsg(err)}`);
           }
         }
       }
 
-      if (inst) await inst.updateDiffBase().catch(() => undefined);
+      await inst.updateDiffBase().catch(() => undefined);
 
       let retired = false;
-      if (preview.killAfter && inst) {
+      if (preview.killAfter) {
         try {
           await inst.kill();
           store.removeInstance(inst.title);
@@ -674,20 +734,20 @@ export function App(props: AppProps) {
           store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
         }
       }
-      if (inst) inst.busy = false;
       store.setInfo(
-        t((m) => m.toast.merged)(preview.sourceBranch, preview.hostBranch, autoCommitted, retired),
+        t((m) => m.toast.merged)(preview.sourceBranch, pre.hostBranch, autoCommitted, retired),
       );
-      if (!retired) {
-        await inst?.computeDiff().catch(() => undefined);
-        await Promise.all(
-          store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
-        );
-        store.bumpRev();
-      }
+      if (!retired) await inst.computeDiff().catch(() => undefined);
+      await Promise.all(
+        store.model.instances.map((i) => i.computeCommitStats().catch(() => undefined)),
+      );
     } catch (err) {
-      if (inst) inst.busy = false;
-      store.setError(errMsg(err));
+      store.setError(t((m) => m.toast.mergeFailed)(preview.sourceBranch, errMsg(err)));
+      throw err;
+    } finally {
+      if (store.model.instances.some((i) => i.title === inst.title)) {
+        inst.busy = false;
+      }
       store.bumpRev();
     }
   }

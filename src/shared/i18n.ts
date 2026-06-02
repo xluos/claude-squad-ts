@@ -94,6 +94,8 @@ const EN = {
     headerConflicts: 'Conflicts detected',
     headerReady: 'Ready to merge',
     headerReadyRetire: 'Ready to merge & retire',
+    headerQueued: 'Ready to queue',
+    headerQueuedRetire: 'Ready to queue & retire',
     fromLabel: 'from  ',
     intoLabel: 'into  ',
     unknownBranch: '(unknown)',
@@ -105,8 +107,12 @@ const EN = {
       `  Confirming will auto-commit them to ${branch || 'the source branch'} first, then merge.`,
     retireWarn: '⚠ Instance will be killed after merge — tmux, worktree and branch all removed.',
     retireDetail: '  Use [n] / Esc here if you want to keep the agent running.',
+    queueWarn: 'A merge is already running.',
+    queueDetail: '  Confirming queues this merge; it will be rechecked before it runs.',
     confirmMerge: '[Y / ↵] Merge',
     confirmRetire: '[Y / ↵] Merge & retire',
+    confirmQueue: '[Y / ↵] Queue merge',
+    confirmQueueRetire: '[Y / ↵] Queue merge & retire',
     cancel: '[N / Esc] Cancel',
     checkoutOption: 'Checkout — pause this session and copy branch name',
     copyPrompt: (agent: string) => `Copy agent prompt (${agent})`,
@@ -182,6 +188,12 @@ const EN = {
         : ' Agent still running — d kill / c checkout when done.';
       return `Merged ${src} → ${host}${auto}.${tail}`;
     },
+    mergeQueued: (src: string, position: number) =>
+      `Queued merge of ${src}; ${position} merge${position === 1 ? '' : 's'} ahead.`,
+    mergeBlocked: (src: string, reason: string) => `cannot merge ${src}: ${reason}`,
+    mergeConflicts: (src: string, host: string, n: number) =>
+      `cannot merge ${src} into ${host}: ${n} file${n === 1 ? '' : 's'} would conflict`,
+    mergeFailed: (src: string, err: string) => `merge ${src} failed: ${err}`,
     clipboardCopyFailed: 'failed to copy prompt to clipboard',
     nameRequired: 'name required',
     nameExists: (name: string) => `instance "${name}" already exists`,
@@ -338,6 +350,8 @@ const ZH: Messages = {
     headerConflicts: '检测到冲突',
     headerReady: '可以合并',
     headerReadyRetire: '可以合并并关闭实例',
+    headerQueued: '可以排队合并',
+    headerQueuedRetire: '可以排队合并并关闭',
     fromLabel: '从    ',
     intoLabel: '合入  ',
     unknownBranch: '(未知)',
@@ -348,8 +362,12 @@ const ZH: Messages = {
     dirtyDetail: (branch: string) => `  确认后将先自动 commit 到 ${branch || '源分支'}，再合并。`,
     retireWarn: '⚠ 合并后实例会被一并关闭 —— tmux、工作树、分支全部清理。',
     retireDetail: '  想保留会话继续跑，按 [n] / Esc 取消。',
+    queueWarn: '已有一个合并正在执行。',
+    queueDetail: '  确认后会进入队列；真正执行前会重新校验。',
     confirmMerge: '[Y / ↵] 合并',
     confirmRetire: '[Y / ↵] 合并并关闭',
+    confirmQueue: '[Y / ↵] 排队合并',
+    confirmQueueRetire: '[Y / ↵] 排队合并并关闭',
     cancel: '[N / Esc] 取消',
     checkoutOption: '切出 —— 暂停会话并复制分支名',
     copyPrompt: (agent: string) => `复制 ${agent} 的提示词`,
@@ -423,6 +441,12 @@ const ZH: Messages = {
       const tail = retired ? ' 实例已关闭。' : ' 会话仍在运行 —— 完成后按 d 删除 / c 切出。';
       return `已合并 ${src} → ${host}${auto}。${tail}`;
     },
+    mergeQueued: (src: string, position: number) =>
+      `已将 ${src} 加入合并队列；前面还有 ${position} 个合并。`,
+    mergeBlocked: (src: string, reason: string) => `无法合并 ${src}: ${reason}`,
+    mergeConflicts: (src: string, host: string, n: number) =>
+      `无法将 ${src} 合入 ${host}: ${n} 个文件会冲突`,
+    mergeFailed: (src: string, err: string) => `合并 ${src} 失败: ${err}`,
     clipboardCopyFailed: '复制提示词到剪贴板失败',
     nameRequired: '请输入名称',
     nameExists: (name: string) => `实例 "${name}" 已存在`,

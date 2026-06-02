@@ -35,6 +35,10 @@ export interface MergePreview {
    *  capital `M` instead of lowercase `m`; surfaced in the overlay so
    *  the user can back out before two destructive ops run back-to-back. */
   killAfter: boolean;
+  /** Another host-side merge is already running. Confirming this preview
+   *  queues the merge; it is prechecked again immediately before execution
+   *  against the then-current host HEAD. */
+  queued: boolean;
 }
 
 export interface AppModel {

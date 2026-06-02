@@ -66,6 +66,11 @@ export function MergeOverlay(props: MergeOverlayProps) {
   const headerText = () => {
     if (props.preview.blocker) return t((m) => m.merge.headerCannot);
     if (props.preview.conflicts.length > 0) return t((m) => m.merge.headerConflicts);
+    if (props.preview.queued) {
+      return props.preview.killAfter
+        ? t((m) => m.merge.headerQueuedRetire)
+        : t((m) => m.merge.headerQueued);
+    }
     return props.preview.killAfter
       ? t((m) => m.merge.headerReadyRetire)
       : t((m) => m.merge.headerReady);
@@ -135,12 +140,23 @@ export function MergeOverlay(props: MergeOverlayProps) {
         </box>
       </Show>
 
+      <Show when={clean() && props.preview.queued}>
+        <box flexDirection="column">
+          <text fg={colors.warning}>{t((m) => m.merge.queueWarn)}</text>
+          <text fg={colors.muted}>{t((m) => m.merge.queueDetail)}</text>
+        </box>
+      </Show>
+
       <Show when={clean()}>
         <box flexDirection="row" gap={2}>
           <text fg={colors.success}>
-            {props.preview.killAfter
-              ? t((m) => m.merge.confirmRetire)
-              : t((m) => m.merge.confirmMerge)}
+            {props.preview.queued
+              ? props.preview.killAfter
+                ? t((m) => m.merge.confirmQueueRetire)
+                : t((m) => m.merge.confirmQueue)
+              : props.preview.killAfter
+                ? t((m) => m.merge.confirmRetire)
+                : t((m) => m.merge.confirmMerge)}
           </text>
           <text fg={colors.danger}>{t((m) => m.merge.cancel)}</text>
         </box>
