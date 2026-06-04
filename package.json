@@ -58,9 +58,9 @@
   },
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.12",
-    "@opentui/core": "0.2.14",
-    "@opentui/keymap": "0.2.14",
-    "@opentui/solid": "0.2.14",
+    "@opentui/core": "0.3.1",
+    "@opentui/keymap": "0.3.1",
+    "@opentui/solid": "0.3.1",
     "commander": "^14.0.3",
     "simple-git": "^3.36.0",
     "solid-js": "1.9.12",
