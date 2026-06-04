@@ -18,7 +18,7 @@ export async function runReset(): Promise<void> {
   const instances = await storage.loadInstances(cfg.branch_prefix);
   for (const inst of instances) {
     try {
-      await inst.kill();
+      await inst.kill({ deleteBranch: true });
       process.stdout.write(`✓ killed ${inst.title}\n`);
     } catch (err) {
       process.stdout.write(`✗ ${inst.title}: ${(err as Error).message}\n`);

@@ -40,7 +40,7 @@ export interface CommitCounts {
 export interface Worktree {
   data: WorktreeData;
   setup(): Promise<void>;
-  cleanup(): Promise<void>;
+  cleanup(opts: { deleteBranch: boolean }): Promise<void>;
   remove(): Promise<void>;
   prune(): Promise<void>;
   diff(): Promise<DiffStats>;
@@ -134,7 +134,7 @@ function buildWorktree(data: WorktreeData): Worktree {
 
     async setup(): Promise<void> {
       // Always cleanup any leftover at the path first.
-      await safeRemoveWorktree(data.worktree_path);
+      await safeRemoveWorktree(data.repo_path, data.worktree_path);
       if (existsSync(data.worktree_path)) {
         await rm(data.worktree_path, { recursive: true, force: true });
       }
@@ -202,16 +202,23 @@ function buildWorktree(data: WorktreeData): Worktree {
       }
     },
 
-    async cleanup(): Promise<void> {
-      await safeRemoveWorktree(data.worktree_path);
-      if (!data.is_existing_branch) {
-        await runGit(['-C', data.repo_path, 'branch', '-D', data.branch_name]);
+    async cleanup(opts: { deleteBranch: boolean }): Promise<void> {
+      await safeRemoveWorktree(data.repo_path, data.worktree_path);
+      if (opts.deleteBranch) {
+        const branchExists = await localBranchExists(data.repo_path, data.branch_name);
+        if (branchExists) {
+          ensureOk(
+            'git',
+            ['branch', '-D', data.branch_name],
+            await runGit(['-C', data.repo_path, 'branch', '-D', data.branch_name]),
+          );
+        }
       }
       await runGit(['-C', data.repo_path, 'worktree', 'prune']);
     },
 
     async remove(): Promise<void> {
-      await safeRemoveWorktree(data.worktree_path);
+      await safeRemoveWorktree(data.repo_path, data.worktree_path);
     },
 
     async prune(): Promise<void> {
@@ -313,8 +320,7 @@ function buildWorktree(data: WorktreeData): Worktree {
   return self;
 }
 
-async function safeRemoveWorktree(path: string): Promise<void> {
+async function safeRemoveWorktree(repoPath: string, path: string): Promise<void> {
   // `git worktree remove -f` needs to be run from inside the repo; the path itself works.
-  // We don't know the repo here for arbitrary calls; rely on `git -C <path>` failing silently.
-  await runGit(['worktree', 'remove', '-f', path]);
+  await runGit(['-C', repoPath, 'worktree', 'remove', '-f', path]);
 }

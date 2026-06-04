@@ -18,6 +18,7 @@ export const KeyName = {
   Pull: 'u',
   Apply: 'a',
   Kill: 'd',
+  KillWithBranch: 'D',
   Send: 'i',
   Help: '?',
   Quit: 'q',
@@ -47,6 +48,12 @@ export interface KeyBinding {
 export const DEFAULT_BINDINGS: KeyBinding[] = [
   { key: KeyName.New, label: 'n', desc: () => t((m) => m.menu.new), group: 1 },
   { key: KeyName.Kill, label: 'd', desc: () => t((m) => m.menu.kill), group: 1 },
+  {
+    key: KeyName.KillWithBranch,
+    label: 'D',
+    desc: () => t((m) => m.menu.killWithBranch),
+    group: 1,
+  },
   { key: KeyName.Enter, label: '↵/o', desc: () => t((m) => m.menu.open), group: 1 },
   { key: KeyName.Submit, label: 's', desc: () => t((m) => m.menu.submitPR), group: 2 },
   { key: KeyName.Checkout, label: 'c', desc: () => t((m) => m.menu.checkout), group: 2 },
@@ -66,6 +73,12 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
 export const PAUSED_BINDINGS: KeyBinding[] = [
   { key: KeyName.New, label: 'n', desc: () => t((m) => m.menu.new), group: 1 },
   { key: KeyName.Kill, label: 'd', desc: () => t((m) => m.menu.kill), group: 1 },
+  {
+    key: KeyName.KillWithBranch,
+    label: 'D',
+    desc: () => t((m) => m.menu.killWithBranch),
+    group: 1,
+  },
   { key: KeyName.Resume, label: 'r', desc: () => t((m) => m.menu.resume), group: 1 },
   { key: KeyName.Submit, label: 's', desc: () => t((m) => m.menu.submitPR), group: 2 },
   { key: KeyName.Merge, label: 'm', desc: () => t((m) => m.menu.merge), group: 2 },

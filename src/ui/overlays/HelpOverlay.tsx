@@ -25,6 +25,7 @@ const SECTIONS: SectionDef[] = [
       ['n', () => t((m) => m.help.entries.new)],
       ['N', () => t((m) => m.help.entries.newWithPrompt)],
       ['d', () => t((m) => m.help.entries.kill)],
+      ['D', () => t((m) => m.help.entries.killWithBranch)],
       ['↑/k, ↓/j', () => t((m) => m.help.entries.nav)],
       ['J / K', () => t((m) => m.help.entries.reorder)],
       ['↵ / o', () => t((m) => m.help.entries.attach)],

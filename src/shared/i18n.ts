@@ -68,7 +68,7 @@ const EN = {
       mergeTitle: 'merge',
       mergeDesc: 'fold branch into your host branch',
       killTitle: 'kill',
-      killDesc: 'drop branch + worktree entirely',
+      killDesc: 'drop session + worktree; keep branch',
     },
   },
   placeholder: {
@@ -84,6 +84,8 @@ const EN = {
     yes: '[Y] Yes',
     no: '[N] No',
     kill: (name: string) => `Delete instance "${name}" and its worktree?`,
+    killWithBranch: (name: string, branch: string) =>
+      `Delete instance "${name}", its worktree, and local branch "${branch || '(unknown)'}"?`,
     pause: (name: string) => `Pause "${name}"? Worktree will be removed but branch kept.`,
     push: (branch: string) => `Push branch "${branch}" to origin and open in browser?`,
     apply: (name: string, host: string) =>
@@ -129,7 +131,8 @@ const EN = {
     entries: {
       new: 'Create a new session',
       newWithPrompt: 'Create a new session with a prompt',
-      kill: 'Kill (delete) the selected session',
+      kill: 'Delete selected session and worktree; keep branch',
+      killWithBranch: 'Delete selected session, worktree, and local branch',
       nav: 'Navigate between sessions',
       reorder: 'Reorder sessions down / up',
       attach: 'Attach to the selected session',
@@ -234,7 +237,8 @@ const EN = {
   },
   menu: {
     new: 'new',
-    kill: 'kill',
+    kill: 'delete',
+    killWithBranch: 'delete+branch',
     open: 'open',
     submitPR: 'submit PR',
     checkout: 'checkout',
@@ -324,7 +328,7 @@ const ZH: Messages = {
       mergeTitle: '合并',
       mergeDesc: '合入主分支',
       killTitle: '删除',
-      killDesc: '彻底清理分支和工作树',
+      killDesc: '删除会话和工作树，保留分支',
     },
   },
   placeholder: {
@@ -340,6 +344,8 @@ const ZH: Messages = {
     yes: '[Y] 是',
     no: '[N] 否',
     kill: (name: string) => `删除实例 "${name}" 及其工作树？`,
+    killWithBranch: (name: string, branch: string) =>
+      `删除实例 "${name}"、工作树和本地分支 "${branch || '(未知)'}"？`,
     pause: (name: string) => `暂停 "${name}"？工作树将被移除但保留分支。`,
     push: (branch: string) => `推送分支 "${branch}" 到 origin 并在浏览器打开？`,
     apply: (name: string, host: string) =>
@@ -384,7 +390,8 @@ const ZH: Messages = {
     entries: {
       new: '创建新会话',
       newWithPrompt: '创建新会话（带提示词）',
-      kill: '删除选中的会话',
+      kill: '删除选中的会话和工作树，保留分支',
+      killWithBranch: '删除选中的会话、工作树和本地分支',
       nav: '在会话间导航',
       reorder: '上移 / 下移会话',
       attach: '接入选中的会话',
@@ -485,6 +492,7 @@ const ZH: Messages = {
   menu: {
     new: '新建',
     kill: '删除',
+    killWithBranch: '删分支',
     open: '打开',
     submitPR: '提 PR',
     checkout: '切出',

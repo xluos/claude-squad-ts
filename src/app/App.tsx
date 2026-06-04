@@ -516,7 +516,12 @@ export function App(props: AppProps) {
     }
     if (seq === 'd') {
       store.setPressedKey('d');
-      store.openConfirm({ kind: 'kill', index: store.model.selected });
+      store.openConfirm({ kind: 'kill', index: store.model.selected, deleteBranch: false });
+      return;
+    }
+    if (seq === 'D') {
+      store.setPressedKey('D');
+      store.openConfirm({ kind: 'kill', index: store.model.selected, deleteBranch: true });
       return;
     }
     if (seq === 'i') {
@@ -727,7 +732,7 @@ export function App(props: AppProps) {
       let retired = false;
       if (preview.killAfter) {
         try {
-          await inst.kill();
+          await inst.kill({ deleteBranch: true });
           store.removeInstance(inst.title);
           retired = true;
         } catch (err) {
@@ -891,7 +896,7 @@ export function App(props: AppProps) {
     );
     inst.busy = false;
     try {
-      await inst.kill();
+      await inst.kill({ deleteBranch: true });
       store.removeInstance(inst.title);
     } catch (err) {
       store.setError(t((m) => m.toast.cleanupFailed)(errMsg(err)));
@@ -1154,7 +1159,7 @@ export function App(props: AppProps) {
     }
     try {
       if (action.kind === 'kill') {
-        await inst.kill();
+        await inst.kill({ deleteBranch: action.deleteBranch });
         store.removeInstance(inst.title);
       } else if (action.kind === 'pause') {
         // Kick off pause then bumpRev *before* awaiting so the spinner
@@ -1646,7 +1651,9 @@ function confirmMessage(model: ReturnType<typeof createAppStore>['model']): stri
   const name = inst?.displayName || inst?.title || '';
   switch (action.kind) {
     case 'kill':
-      return t((m) => m.confirm.kill)(name);
+      return action.deleteBranch
+        ? t((m) => m.confirm.killWithBranch)(name, inst?.branch ?? '')
+        : t((m) => m.confirm.kill)(name);
     case 'pause':
       return t((m) => m.confirm.pause)(name);
     case 'push':

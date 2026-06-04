@@ -301,9 +301,9 @@ export class Instance {
     }
   }
 
-  async kill(): Promise<void> {
+  async kill(opts: { deleteBranch: boolean }): Promise<void> {
     if (this.tmux) await this.tmux.close();
-    if (this.worktree) await this.worktree.cleanup();
+    if (this.worktree) await this.worktree.cleanup(opts);
     this.started = false;
   }
 

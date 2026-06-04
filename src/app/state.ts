@@ -89,7 +89,7 @@ export type PendingHelp =
   | { kind: 'checkout'; index: number };
 
 export type ConfirmAction =
-  | { kind: 'kill'; index: number }
+  | { kind: 'kill'; index: number; deleteBranch: boolean }
   | { kind: 'pause'; index: number }
   | { kind: 'push'; index: number }
   | { kind: 'apply'; index: number; hostBranch: string; dirty: boolean };
